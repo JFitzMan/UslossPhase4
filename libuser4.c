@@ -13,6 +13,8 @@
 #include <usyscall.h>
 #include <usloss.h>
 
+ int debugflaglib4 = 1;
+
 #define CHECKMODE {						\
 	if (USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) { 				\
 	    USLOSS_Console("Trying to invoke syscall from kernel\n");	\
@@ -21,6 +23,8 @@
 }
 
 int  Sleep(int seconds){
+	if (debugflaglib4)
+		USLOSS_Console("Sleep(): At beginning\n");
 	return 0;
 }
 
