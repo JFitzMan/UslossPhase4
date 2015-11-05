@@ -6,8 +6,13 @@
 #include <stdlib.h> /* needed for atoi() */
 #include <stdio.h>
 #include <string.h>
+#include <usyscall.h>
+
 
 int semRunning;
+int procTable_mutex;
+//process table
+struct procSlot procTable[MAXPROC];
 
 int debugflag4 = 1;
 
@@ -30,6 +35,19 @@ start3(void)
     inKernelMode("start3");
     if (debugflag4)
         USLOSS_Console("start3(): started in kernel mode\n");
+
+    /*
+     * Initialize data structures
+     */
+
+    //link new system calls to syscall vec
+    systemCallVec[SYS_SLEEP] = sleep;
+
+    //initialize global mailbox for proc table editing
+    procTable_mutex = MboxCreate(1, 0);
+
+    //initialize phase 4 process table
+    initializeProcTable();
 
     /*
      * Create clock device driver 
@@ -131,8 +149,18 @@ DiskDriver(char *arg)
     return 0;
 }
 
+void
+sleep(systemArgs *args){
+
+    int seconds = args->arg1;
+
+    if (debugflag4)
+        USLOSS_Console("sleep(): got %d seconds from Sleep\n", seconds);
+}
+
 //utility function, will halt if kernel mode is called
-int inKernelMode(char *procName)
+int 
+inKernelMode(char *procName)
 {
     if( (USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0 ) {
       USLOSS_Console("Kernel Error: Not in kernel mode, may not run %s()\n", procName);
@@ -143,3 +171,52 @@ int inKernelMode(char *procName)
       return 1;
     }
 }
+
+//utility function to be called one time in start3
+//removed it from start3 because it was very long
+void
+initializeProcTable(){
+    //inititalize process table
+    for(int i = 0; i < MAXPROC; i++){
+        procTable[i].pid = -1;
+        procTable[i].parentPid = -1;
+        procTable[i].nextChild = NULL;
+        procTable[i].nextSib = NULL;
+        procTable[i].priority = -1;
+        procTable[i].start_func = NULL;
+        procTable[i].name = NULL;
+        procTable[i].arg = NULL;
+        procTable[i].stack_size = -1;
+        procTable[i].privateMbox = -1;
+        procTable[i].termCode = -1;
+        procTable[i].status = -1;
+    }
+    //Manually add in entries for sentinel, start1, and start2
+    procTable[1].name = "sentinel";
+    procTable[1].priority = 6;
+    procTable[1].pid = 1;
+    procTable[1].status = READY;
+    procTable[2].name = "start1";
+    procTable[2].priority = 1;
+    procTable[2].pid = 2;
+    procTable[2].status = JOIN_BLOCKED;
+    procTable[3].name = "start2";
+    procTable[3].priority = 1;
+    procTable[3].pid = 3;
+    procTable[3].status = JOIN_BLOCKED;
+
+    //get start3 set in in proc table
+
+    procTable[getpid()].pid = getpid();
+    procTable[getpid()].parentPid = 3;  //start2 PID
+    procTable[getpid()].name = "start2";
+    procTable[getpid()].status = READY;
+    procTable[getpid()].stack_size = USLOSS_MIN_STACK;
+    procTable[getpid()].priority = 1;
+    procTable[getpid()].nextChild = NULL;
+    procTable[getpid()].nextSib = NULL;
+    procTable[getpid()].privateMbox = MboxCreate(0,sizeof(int[2]));
+    procTable[getpid()].termCode = -1;
+
+} //end initializeProcTable
+
