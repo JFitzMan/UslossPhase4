@@ -16,7 +16,6 @@
  */
 
 extern  int  Sleep(int seconds);
-
 extern  int  DiskRead (void *diskBuffer, int unit, int track, int first, 
                        int sectors, int *status);
 extern  int  DiskWrite(void *diskBuffer, int unit, int track, int first,
@@ -26,8 +25,8 @@ extern  int  TermRead (char *buffer, int bufferSize, int unitID,
                        int *numCharsRead);
 extern  int  TermWrite(char *buffer, int bufferSize, int unitID,
                        int *numCharsRead);
-
 extern  int  start4(char *);
+extern int 	inKernelMode(char *procName);
 
 #define ERR_INVALID             -1
 #define ERR_OK                  0
