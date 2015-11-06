@@ -11,9 +11,14 @@
 
 #define MAXLINE         80
 
+
+//define this before function prototypes because its used in a few of them
+typedef struct procSlot *procPtr;
+
 /*
  * Function prototypes for this phase.
  */
+
 
 extern  int  Sleep(int seconds);
 extern  int  DiskRead (void *diskBuffer, int unit, int track, int first, 
@@ -26,34 +31,40 @@ extern  int  TermRead (char *buffer, int bufferSize, int unitID,
 extern  int  TermWrite(char *buffer, int bufferSize, int unitID,
                        int *numCharsRead);
 
+//utilities
 extern  int  start4(char *);
 extern  int  inKernelMode(char *procName);
 extern  void initializeProcTable();
+extern  void setUpSleepSlot(int pid);
+extern  void setToUserMode();
+extern  void addToSleepList(procPtr toAdd);
+extern  void wakeUpNextProc();
 
+//interface with system calls
 extern  void sleep(systemArgs *args);
+extern  int  sleepReal(int seconds);
 
 #define ERR_INVALID             -1
 #define ERR_OK                  0
 
+//proc table definitions
 #define JOIN_BLOCKED 1;
 #define READY        2;
 #define WAIT_BLOCKED 3;
+#define SLEEPING     4;
 
-typedef struct procSlot *procPtr;
+
 
 struct procSlot {
 	int			pid;
-	int			parentPid;
-	int 		(* start_func) (char *);
 	char*		name;
 	int			status;
-	char*		arg;
-	int			stack_size;
 	int			priority;
-	procPtr		nextChild;
-	procPtr		nextSib;
+	procPtr		nextProc;
 	int			privateMbox;
 	int			termCode;
+	int 		timeToWakeUp;
+
 
 };
 

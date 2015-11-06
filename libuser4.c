@@ -13,7 +13,7 @@
 #include <usyscall.h>
 #include <usloss.h>
 
- int debugflaglib4 = 1;
+ int debugflaglib4 = 0;
 
 #define CHECKMODE {						\
 	if (USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE) { 				\
