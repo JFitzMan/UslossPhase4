@@ -14,10 +14,11 @@ int procTable_mutex;
 //process table
 struct procSlot procTable[MAXPROC];
 
-int debugflag4 = 0;
+int debugflag4 = 1;
 
 static int ClockDriver(char *);
-static int DiskDriver(char *);
+//static int DiskDriver(char *);
+static int TermDriver(char *);
 
 static procPtr SleepList;
 
@@ -28,6 +29,12 @@ start3(void)
     char    termbuf[10];
     int		i;
     int		clockPID;
+
+    int     term1PID;
+    int     term2PID;
+    int     term3PID;
+    int     term4PID;
+
     int		pid;
     int		status;
 
@@ -44,6 +51,7 @@ start3(void)
 
     //link new system calls to syscall vec
     systemCallVec[SYS_SLEEP] = sleep;
+    systemCallVec[SYS_TERMREAD]  = termRead;
 
     //initialize global mailbox for proc table editing
     procTable_mutex = MboxCreate(1, 0);
@@ -97,7 +105,34 @@ start3(void)
     /*
      * Create terminal device drivers.
      */
+     /*
+    term1PID = fork1("Terminal Driver 0", TermDriver, "0", USLOSS_MIN_STACK, 2);
+    if (term1PID < 0) {
+       USLOSS_Console("start3(): Can't create terminal driver 0\n");
+       USLOSS_Halt(1);
+    }
+    sempReal(semRunning);
 
+    term2PID = fork1("Terminal Driver 1", TermDriver, "1", USLOSS_MIN_STACK, 2);
+    if (term1PID < 0) {
+       USLOSS_Console("start3(): Can't create terminal driver 1\n");
+       USLOSS_Halt(1);
+    }
+    sempReal(semRunning);
+
+    term3PID = fork1("Terminal Driver 2", TermDriver, "2", USLOSS_MIN_STACK, 2);
+    if (term1PID < 0) {
+       USLOSS_Console("start3(): Can't create terminal driver 2\n");
+       USLOSS_Halt(1);
+    }
+    sempReal(semRunning);
+*/
+    term2PID = fork1("Terminal Driver 2", TermDriver, "1", USLOSS_MIN_STACK, 2);
+    if (term2PID < 0) {
+       USLOSS_Console("start3(): Can't create terminal driver 3\n");
+       USLOSS_Halt(1);
+    }
+    sempReal(semRunning);
 
     /*
      * Create first user-level process and wait for it to finish.
@@ -114,10 +149,54 @@ start3(void)
      */
     zap(clockPID);  // clock driver
     join(&status);
+    if (debugflag4)
+        USLOSS_Console("start3(): zapping term drivers\n");
 
+    zap(term2PID);  // term1 driver
+    if (debugflag4)
+        USLOSS_Console("start3(): zapping term drivers\n");
+    join(&status);
+    if (debugflag4)
+        USLOSS_Console("start3(): zapping term drivers\n");
+    /*
+    zap(term2PID);  // term2 driver
+    join(&status);
+    zap(term3PID);  // term3 driver
+    join(&status);
+    zap(term4PID);  // term4 driver
+    join(&status);
+*/
     // eventually, at the end:
     quit(0);
     
+}
+
+//the argument specifies which terminal the driver is for
+static int
+TermDriver(char *arg){
+
+    int result;
+    int unit = atoi( (char *) arg); 
+    int status;
+
+    semvReal(semRunning);
+    if (debugflag4)
+        USLOSS_Console("TermDriver(): TermDriver %d starting\n", unit+1);
+    //enable interrupts
+    USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
+
+    while(! isZapped()) {
+        result = waitDevice(USLOSS_TERM_DEV, unit, &status);
+        if (debugflag4)
+            //USLOSS_Console("TermDriver(): TermDriver %d returned from wait device\n", unit);
+
+        if (result != 0) {
+           return 0;
+        }
+    }
+
+    quit(0);
+
 }
 
 static int
@@ -130,6 +209,7 @@ ClockDriver(char *arg)
     semvReal(semRunning);
     if (debugflag4)
         USLOSS_Console("ClockDriver(): Starting\n");
+    //enable interrupts
     USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
 
     // Infinite loop until we are zap'd
@@ -152,14 +232,14 @@ ClockDriver(char *arg)
     //been zapped, quitting time
     quit(0);
 }
-
+/*
 static int
 DiskDriver(char *arg)
 {
     int unit = atoi( (char *) arg); 	// Unit is passed as arg.
     return 0;
 }
-
+*/
 void
 sleep(systemArgs *args){
 
@@ -182,6 +262,11 @@ sleep(systemArgs *args){
     args->arg1 = 0;
     //set back to user mode before retuning to system call Sleep
     setToUserMode();
+}
+
+void
+termRead(systemArgs *args){
+
 }
 
 //adds process to sleep list and blocks
