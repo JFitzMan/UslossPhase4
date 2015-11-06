@@ -22,6 +22,40 @@
 	}						\
 }
 
+int TermWrite(char *buffer, int bufferSize, int unitID,
+                       int *numCharsRead){
+	return 0;
+}
+
+int TermRead (char *buffer, int bufferSize, int unitID,
+                       int *numCharsRead){
+	
+	//check for illegal arguments
+	if (buffer == 0 || bufferSize <= 0 || unitID < 0){
+	 	if (debugflaglib4)
+			USLOSS_Console("TermRead(): invalid arguments! returning\n");
+		return -1;
+	}
+
+	 //build sysarg structure to pass to the syscall vec
+	systemArgs sysArg;
+
+	CHECKMODE;
+	sysArg.number = SYS_TERMREAD;
+	sysArg.arg1 = buffer;
+	sysArg.arg2 = (void *) ( (long) bufferSize);
+	sysArg.arg3 = (void *) ( (long) unitID);
+
+	if (debugflaglib4)
+		USLOSS_Console("TermRead(): sysarg built, calling sysvec function\n");
+	USLOSS_Syscall(&sysArg);
+
+	return (int ) ((void*) sysArg.arg2);
+
+
+	return 0;
+}
+
 int  Sleep(int seconds){
 
 	if (seconds <= 0){
@@ -46,8 +80,6 @@ int  Sleep(int seconds){
 
 int  DiskRead (void *diskBuffer, int unit, int track, int first, 
                        int sectors, int *status){
-	if (debugflaglib4)
-		USLOSS_Console("DiskRead(): At beginning\n");
 
 	//just checks for obvious illegal values for now, adjust as needed
 	if (unit < 0 || track < 0 || first < 0 || sectors < 0){
@@ -80,12 +112,5 @@ int  DiskSize (int unit, int *sector, int *track, int *disk){
 	return 0;
 }
 
-int TermRead (char *buffer, int bufferSize, int unitID,
-                       int *numCharsRead){
-	return 0;
-}
 
-int TermWrite(char *buffer, int bufferSize, int unitID,
-                       int *numCharsRead){
-	return 0;
-}
+
