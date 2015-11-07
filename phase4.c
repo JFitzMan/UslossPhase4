@@ -19,6 +19,9 @@ int debugflag4 = 1;
 static int ClockDriver(char *);
 //static int DiskDriver(char *);
 static int TermDriver(char *);
+static int TermReader(char *);
+static int TermWriter(char *);
+
 
 static procPtr SleepList;
 
@@ -30,10 +33,9 @@ start3(void)
     int		i;
     int		clockPID;
 
-    int     term1PID;
-    int     term2PID;
-    int     term3PID;
-    int     term4PID;
+    int     termDriverPID[USLOSS_TERM_UNITS];
+    int     termReaderPID[USLOSS_TERM_UNITS];
+    int     termWriterPID[USLOSS_TERM_UNITS];
 
     int		pid;
     int		status;
@@ -105,34 +107,42 @@ start3(void)
     /*
      * Create terminal device drivers.
      */
-     /*
-    term1PID = fork1("Terminal Driver 0", TermDriver, "0", USLOSS_MIN_STACK, 2);
-    if (term1PID < 0) {
-       USLOSS_Console("start3(): Can't create terminal driver 0\n");
-       USLOSS_Halt(1);
-    }
-    sempReal(semRunning);
+    for (i = 0; i < USLOSS_TERM_UNITS; i++) {
+        /*
+        sprintf(termbuf, "%d", i);
+        sprintf(name, "%s", "Terminal Driver ");
+        name[16] = i;
+        termDriverPID[i] = fork1(name, TermDriver, termbuf, USLOSS_MIN_STACK, 2);
+        if (termDriverPID[i] < 0) {
+            USLOSS_Console("start3(): Can't create terminal driver %d\n", i);
+            USLOSS_Halt(1);
+        }
+        sempReal(semRunning);
+        */
 
-    term2PID = fork1("Terminal Driver 1", TermDriver, "1", USLOSS_MIN_STACK, 2);
-    if (term1PID < 0) {
-       USLOSS_Console("start3(): Can't create terminal driver 1\n");
-       USLOSS_Halt(1);
-    }
-    sempReal(semRunning);
+        sprintf(termbuf, "%d", i);
+        sprintf(name, "%s", "Terminal Reader ");
+        name[16] = i;
+        termReaderPID[i] = fork1(name, TermReader, termbuf, USLOSS_MIN_STACK, 2);
+        if (termReaderPID[i] < 0) {
+            USLOSS_Console("start3(): Can't create terminal reader %d\n", i);
+            USLOSS_Halt(1);
+        }
+        sempReal(semRunning);
 
-    term3PID = fork1("Terminal Driver 2", TermDriver, "2", USLOSS_MIN_STACK, 2);
-    if (term1PID < 0) {
-       USLOSS_Console("start3(): Can't create terminal driver 2\n");
-       USLOSS_Halt(1);
+        sprintf(termbuf, "%d", i);
+        sprintf(name, "%s", "Terminal Writer ");
+        name[16] = i;
+        termWriterPID[i] = fork1(name, TermWriter, termbuf, USLOSS_MIN_STACK, 2);
+        if (termWriterPID[i] < 0) {
+            USLOSS_Console("start3(): Can't create terminal writer %d\n", i);
+            USLOSS_Halt(1);
+        }
+        sempReal(semRunning);
+        
     }
-    sempReal(semRunning);
-*/
-    term2PID = fork1("Terminal Driver 2", TermDriver, "1", USLOSS_MIN_STACK, 2);
-    if (term2PID < 0) {
-       USLOSS_Console("start3(): Can't create terminal driver 3\n");
-       USLOSS_Halt(1);
-    }
-    sempReal(semRunning);
+
+    
 
     /*
      * Create first user-level process and wait for it to finish.
@@ -144,28 +154,32 @@ start3(void)
     pid = spawnReal("start4", start4, NULL, 4 * USLOSS_MIN_STACK, 3);
     pid = waitReal(&status);
 
+    if (debugflag4)
+        USLOSS_Console("start3(): test is over, claning up drivers\n");
+
     /*
      * Zap the device drivers
      */
     zap(clockPID);  // clock driver
     join(&status);
-    if (debugflag4)
-        USLOSS_Console("start3(): zapping term drivers\n");
+   
 
-    zap(term2PID);  // term1 driver
-    if (debugflag4)
-        USLOSS_Console("start3(): zapping term drivers\n");
-    join(&status);
-    if (debugflag4)
-        USLOSS_Console("start3(): zapping term drivers\n");
-    /*
-    zap(term2PID);  // term2 driver
-    join(&status);
-    zap(term3PID);  // term3 driver
-    join(&status);
-    zap(term4PID);  // term4 driver
-    join(&status);
-*/
+    //terminal drivers
+    int message [] = {-2};
+    for (i = 0; i < USLOSS_TERM_UNITS; i++) {
+        //termDrivers
+        //zap(termDriverPID[i]);
+        //join(&status);
+
+        //termReaders
+        MboxCondSend(procTable[termReaderPID[i]].privateMbox, message, sizeof(message));
+        join(&status);
+
+        //termWriters
+        MboxCondSend(procTable[termWriterPID[i]].privateMbox, message, sizeof(message));
+        join(&status);
+
+    }
     // eventually, at the end:
     quit(0);
     
@@ -188,7 +202,7 @@ TermDriver(char *arg){
     while(! isZapped()) {
         result = waitDevice(USLOSS_TERM_DEV, unit, &status);
         if (debugflag4)
-            //USLOSS_Console("TermDriver(): TermDriver %d returned from wait device\n", unit);
+            USLOSS_Console("TermDriver(): TermDriver %d returned from wait device\n", unit);
 
         if (result != 0) {
            return 0;
@@ -196,7 +210,56 @@ TermDriver(char *arg){
     }
 
     quit(0);
+    return 0;
 
+}
+
+static int
+TermReader(char *arg){
+
+    int unit = atoi( (char *) arg); 
+    int me = getpid();
+    int result [] = {-1};
+    procTable[me].privateMbox = MboxCreate(0, sizeof(result));
+
+
+    semvReal(semRunning);
+    if (debugflag4)
+        USLOSS_Console("TermReader(): TermReader %d starting\n", unit+1);
+
+    //block until further notice
+    MboxReceive(procTable[me].privateMbox, result, sizeof(result));
+
+    if (result[0] == -2){
+        if (debugflag4)
+                USLOSS_Console("TermReader(): TermReader %d  zapped! quitting\n", unit+1);
+        quit(0);
+    }
+    return 0;
+}
+
+static int
+TermWriter(char *arg){
+
+    int unit = atoi( (char *) arg);
+    int me = getpid(); 
+    int result [] = {-1};
+    procTable[me].privateMbox = MboxCreate(0, sizeof(result));
+
+
+    semvReal(semRunning);
+    if (debugflag4)
+        USLOSS_Console("TermWriter(): TermWriter %d starting\n", unit+1);
+
+    //block until further notice
+    MboxReceive(procTable[me].privateMbox, result, sizeof(result));
+        
+    if (result[0] == -2){
+        if (debugflag4)
+                USLOSS_Console("TermWriter(): TermWriter %d  zapped! quitting\n", unit+1);
+        quit(0);
+    }
+    return 0;
 }
 
 static int
@@ -209,6 +272,7 @@ ClockDriver(char *arg)
     semvReal(semRunning);
     if (debugflag4)
         USLOSS_Console("ClockDriver(): Starting\n");
+
     //enable interrupts
     USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
 
@@ -231,6 +295,7 @@ ClockDriver(char *arg)
     }
     //been zapped, quitting time
     quit(0);
+    return 0;
 }
 /*
 static int
