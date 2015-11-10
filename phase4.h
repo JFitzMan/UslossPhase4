@@ -43,7 +43,10 @@ extern  void wakeUpNextProc();
 //interface with system calls
 extern  void sleep(systemArgs *args);
 extern  int  sleepReal(int seconds);
+
 extern  void termRead(systemArgs *args);
+extern  int termReadReal(char* buffer, int maxSize, int unit);
+
 
 #define ERR_INVALID             -1
 #define ERR_OK                  0

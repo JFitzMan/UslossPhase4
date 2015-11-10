@@ -11,6 +11,13 @@
 
 int semRunning;
 int procTable_mutex;
+
+//terminal mailboxes
+int charInbox[USLOSS_TERM_UNITS];
+int charOutbox[USLOSS_TERM_UNITS];
+int readMbox[USLOSS_TERM_UNITS];
+int writeMbox[USLOSS_TERM_UNITS];
+
 //process table
 struct procSlot procTable[MAXPROC];
 
@@ -23,6 +30,7 @@ static int TermReader(char *);
 static int TermWriter(char *);
 
 
+
 static procPtr SleepList;
 
 void
@@ -31,6 +39,8 @@ start3(void)
     char	name[128];
     char    termbuf[10];
     int		i;
+
+    //Driver PIDs for later quitting
     int		clockPID;
 
     int     termDriverPID[USLOSS_TERM_UNITS];
@@ -105,10 +115,22 @@ start3(void)
     */
 
     /*
+    * create terminal mailboxes
+    */
+    int result [] = {-1};
+    for (i = 0; i < USLOSS_TERM_UNITS; i++) {
+        charInbox[i]  = MboxCreate(0, sizeof(result));
+        charOutbox[i] = MboxCreate(0, sizeof(result));
+        readMbox[i]   = MboxCreate(10, sizeof(char)*MAXLINE);
+        writeMbox[i]  = MboxCreate(10, sizeof(char)*MAXLINE);
+    }
+
+
+    /*
      * Create terminal device drivers.
      */
     for (i = 0; i < USLOSS_TERM_UNITS; i++) {
-        /*
+        
         sprintf(termbuf, "%d", i);
         sprintf(name, "%s", "Terminal Driver ");
         name[16] = i;
@@ -118,7 +140,7 @@ start3(void)
             USLOSS_Halt(1);
         }
         sempReal(semRunning);
-        */
+        
 
         sprintf(termbuf, "%d", i);
         sprintf(name, "%s", "Terminal Reader ");
@@ -155,7 +177,7 @@ start3(void)
     pid = waitReal(&status);
 
     if (debugflag4)
-        USLOSS_Console("start3(): test is over, claning up drivers\n");
+        USLOSS_Console("start3(): test is over, cleaning up drivers\n");
 
     /*
      * Zap the device drivers
@@ -168,15 +190,15 @@ start3(void)
     int message [] = {-2};
     for (i = 0; i < USLOSS_TERM_UNITS; i++) {
         //termDrivers
-        //zap(termDriverPID[i]);
-        //join(&status);
+        zap(termDriverPID[i]);
+        join(&status);
 
         //termReaders
-        MboxCondSend(procTable[termReaderPID[i]].privateMbox, message, sizeof(message));
+        MboxCondSend(charInbox[i], message, sizeof(message));
         join(&status);
 
         //termWriters
-        MboxCondSend(procTable[termWriterPID[i]].privateMbox, message, sizeof(message));
+        MboxCondSend(charOutbox[i], message, sizeof(message));
         join(&status);
 
     }
@@ -192,22 +214,48 @@ TermDriver(char *arg){
     int result;
     int unit = atoi( (char *) arg); 
     int status;
+    int message [] = {0};
 
     semvReal(semRunning);
     if (debugflag4)
-        USLOSS_Console("TermDriver(): TermDriver %d starting\n", unit+1);
+        USLOSS_Console("    TermDriver%d(): TermDriver %d starting\n", unit+1, unit+1);
+
     //enable interrupts
     USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
+
+    //call the receive interrupt definition
+    long control = 0;
+    control = USLOSS_TERM_CTRL_RECV_INT(control);
+    //turn receive interrupts on for the terminal unit
+    result = USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)control);
 
     while(! isZapped()) {
         result = waitDevice(USLOSS_TERM_DEV, unit, &status);
         if (debugflag4)
-            USLOSS_Console("TermDriver(): TermDriver %d returned from wait device\n", unit);
+            USLOSS_Console("    TermDriver%d(): TermDriver %d returned from wait device\n", unit+1, unit+1);
 
+        //if WaitDeivce returned 0, process was zapped! Quit
         if (result != 0) {
-           return 0;
+            quit(0);
+            return 0;
+        }
+
+        //check to see if a character was received
+        if(USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY){
+            //let TermReader know there is a character to read
+            message[0] = status;
+            MboxSend(charInbox[unit], message, sizeof(message));
+        }
+        if(USLOSS_TERM_STAT_XMIT(status) == USLOSS_DEV_READY){
+            //let TermWriter know there is a character to write
+            message[0] = status;
+            MboxSend(charOutbox[unit], message, sizeof(message));
         }
     }
+
+    if (debugflag4)
+        USLOSS_Console("    TermDriver%d(): Zapped! Quitting\n", unit+1);
+    
 
     quit(0);
     return 0;
@@ -225,17 +273,31 @@ TermReader(char *arg){
 
     semvReal(semRunning);
     if (debugflag4)
-        USLOSS_Console("TermReader(): TermReader %d starting\n", unit+1);
+        USLOSS_Console("    TermReader(): TermReader %d starting\n", unit+1);
 
-    //block until further notice
-    MboxReceive(procTable[me].privateMbox, result, sizeof(result));
 
-    if (result[0] == -2){
+    while(! isZapped()) {
+        //wait for next char to arrive
+        MboxReceive(charInbox[unit], result, sizeof(result));
+
+        //a result of -2 means that it was zapped!
+        if (result[0] == -2){
+            if (debugflag4)
+                    USLOSS_Console("    TermReader(): TermReader %d  zapped! quitting\n", unit+1);
+            quit(0);
+            return 0;
+        }
         if (debugflag4)
-                USLOSS_Console("TermReader(): TermReader %d  zapped! quitting\n", unit+1);
-        quit(0);
-    }
+                    USLOSS_Console("    TermReader(): TermReader %d  received a character\n", unit+1);
+        
+    }// end while
+
+    if (debugflag4)
+        USLOSS_Console("    TermReader%d(): Zapped! Quitting\n", unit+1);
+    
+    quit(0);
     return 0;
+
 }
 
 static int
@@ -249,16 +311,28 @@ TermWriter(char *arg){
 
     semvReal(semRunning);
     if (debugflag4)
-        USLOSS_Console("TermWriter(): TermWriter %d starting\n", unit+1);
+        USLOSS_Console("    TermWriter(): TermWriter %d starting\n", unit+1);
 
-    //block until further notice
-    MboxReceive(procTable[me].privateMbox, result, sizeof(result));
-        
-    if (result[0] == -2){
+    while(! isZapped()) {
+        //wait for next char to arrive
+        MboxReceive(charOutbox[unit], result, sizeof(result));
+
+        //a result of -2 means that it was zapped!
+        if (result[0] == -2){
+            if (debugflag4)
+                    USLOSS_Console("    TermWriter(): TermWriter %d  zapped! quitting\n", unit+1);
+            quit(0);
+            return 0;
+        }
         if (debugflag4)
-                USLOSS_Console("TermWriter(): TermWriter %d  zapped! quitting\n", unit+1);
-        quit(0);
-    }
+                    USLOSS_Console("    TermWriter(): TermWriter %d  received a character\n", unit+1);
+        
+    }// end while
+
+    if (debugflag4)
+        USLOSS_Console("    TermWriter%d(): Zapped! Quitting\n", unit+1);
+    
+    quit(0);
     return 0;
 }
 
@@ -271,7 +345,7 @@ ClockDriver(char *arg)
     // Let the parent know we are running and enable interrupts.
     semvReal(semRunning);
     if (debugflag4)
-        USLOSS_Console("ClockDriver(): Starting\n");
+        USLOSS_Console("    ClockDriver(): Starting\n");
 
     //enable interrupts
     USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
@@ -281,7 +355,7 @@ ClockDriver(char *arg)
         //send to wait device mailbox
 	    result = waitDevice(USLOSS_CLOCK_DEV, 0, &status);
         if (debugflag4)
-            USLOSS_Console("ClockDriver(): checking for procs to wake up\n");
+            USLOSS_Console("    ClockDriver(): checking for procs to wake up\n");
 	    if (result != 0) {
 	       return 0;
 	    }
@@ -329,11 +403,6 @@ sleep(systemArgs *args){
     setToUserMode();
 }
 
-void
-termRead(systemArgs *args){
-
-}
-
 //adds process to sleep list and blocks
 int 
 sleepReal(int seconds){
@@ -353,6 +422,29 @@ sleepReal(int seconds){
         return -1;
     return 0;
 
+}
+
+
+void
+termRead(systemArgs *args){
+
+    //extract arguments from syargs
+    //invalid args were already checked for
+    char * buffer = (char*) args->arg1;
+    int maxSize = (int) args->arg2;
+    int unit = (int) args->arg3;
+
+    int numChars = termReadReal(buffer, maxSize, unit);
+
+    args->arg2 = (void *) ( (long) numChars);
+    return;
+
+
+}
+
+int
+termReadReal(char* buffer, int maxSize, int unit){
+    return -1;
 }
 
 //utility function, will halt if kernel mode is called
