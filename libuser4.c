@@ -50,6 +50,9 @@ int TermRead (char *buffer, int bufferSize, int unitID,
 		USLOSS_Console("TermRead(): sysarg built, calling sysvec function\n");
 	USLOSS_Syscall(&sysArg);
 
+	int bytesRead = (int ) ((void*) sysArg.arg2);
+	*numCharsRead = bytesRead;
+
 	return (int ) ((void*) sysArg.arg2);
 
 

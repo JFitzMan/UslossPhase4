@@ -18,10 +18,14 @@ int charOutbox[USLOSS_TERM_UNITS];
 int readMbox[USLOSS_TERM_UNITS];
 int writeMbox[USLOSS_TERM_UNITS];
 
+int lineAmount = 0;
+char line [10][MAXLINE];
+
+
 //process table
 struct procSlot procTable[MAXPROC];
 
-int debugflag4 = 1;
+int debugflag4 = 0;
 
 static int ClockDriver(char *);
 //static int DiskDriver(char *);
@@ -268,13 +272,27 @@ TermReader(char *arg){
     int unit = atoi( (char *) arg); 
     int me = getpid();
     int result [] = {-1};
+    char temp[88];
+
+
+    int curLineIndex = 0;
+    char newLine[MAXLINE];
+
     procTable[me].privateMbox = MboxCreate(0, sizeof(result));
+
+    //initialize line storage
+    int i;
+    for (i = 0; i < 10; i++){
+        newLine[i] = '\0';
+    }
 
 
     semvReal(semRunning);
     if (debugflag4)
         USLOSS_Console("    TermReader(): TermReader %d starting\n", unit+1);
 
+    //enable interrupts
+    USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
 
     while(! isZapped()) {
         //wait for next char to arrive
@@ -287,8 +305,65 @@ TermReader(char *arg){
             quit(0);
             return 0;
         }
+
+        //store character in received variable
+        char received = USLOSS_TERM_STAT_CHAR(result[0]);
         if (debugflag4)
-                    USLOSS_Console("    TermReader(): TermReader %d  received a character\n", unit+1);
+            USLOSS_Console("    TermReader(): TermReader %d  received a character: %c\n", unit+1, received);
+
+        //check to see if current line is full first
+        if (curLineIndex == MAXLINE-1){
+            //finish off this line with a newline
+            newLine[curLineIndex] = '\n';
+            //send line to mailbox
+            if (lineAmount <10){
+                MboxSend(readMbox[unit], &newLine, MAXLINE);
+                lineAmount++;
+            }
+            else{
+                //make room for next line, get rid of oldest line
+                MboxReceive(readMbox[unit], &temp, MAXLINE);
+                //send new line
+                MboxSend(readMbox[unit], &newLine, MAXLINE);
+            }
+
+            //clear the next storage space, and write char there
+            curLineIndex = 0;
+            for (i = 0; i < MAXLINE; i++){
+                newLine[i] = '\0';
+            }
+            newLine[curLineIndex] = received;
+            curLineIndex++;
+        }
+
+        //check to see if its a newline character
+        else if(received == '\n'){
+            newLine[curLineIndex] = '\n';
+            //send line to mailbox
+            if (lineAmount <10){
+                MboxSend(readMbox[unit], &newLine, MAXLINE);
+                lineAmount++;
+            }
+            else{
+                //make room for next line, get rid of oldest line
+                MboxReceive(readMbox[unit], &temp, MAXLINE);
+                //send new line
+                MboxSend(readMbox[unit], &newLine, MAXLINE);
+
+            }
+
+            curLineIndex = 0;
+            for (i = 0; i < MAXLINE; i++){
+                newLine[i] = '\0';
+            }
+ 
+        }
+        //simply write the character
+        else{
+            newLine[curLineIndex] = received;
+            curLineIndex++;
+        }
+
         
     }// end while
 
@@ -317,15 +392,13 @@ TermWriter(char *arg){
         //wait for next char to arrive
         MboxReceive(charOutbox[unit], result, sizeof(result));
 
-        //a result of -2 means that it was zapped!
+        //result of -2 means that it was zapped!
         if (result[0] == -2){
             if (debugflag4)
-                    USLOSS_Console("    TermWriter(): TermWriter %d  zapped! quitting\n", unit+1);
+                USLOSS_Console("    TermWriter(): TermWriter %d  zapped! quitting\n", unit+1);
             quit(0);
             return 0;
         }
-        if (debugflag4)
-                    USLOSS_Console("    TermWriter(): TermWriter %d  received a character\n", unit+1);
         
     }// end while
 
@@ -437,6 +510,7 @@ termRead(systemArgs *args){
     int numChars = termReadReal(buffer, maxSize, unit);
 
     args->arg2 = (void *) ( (long) numChars);
+
     return;
 
 
@@ -444,7 +518,32 @@ termRead(systemArgs *args){
 
 int
 termReadReal(char* buffer, int maxSize, int unit){
-    return -1;
+
+    //recieve a new line from the readMbox to a temp buf
+    char tempBuf [MAXLINE];
+    if (debugflag4)
+        USLOSS_Console("termReadReal(): receiving from readMbox, waiting for new line\n");
+
+    //call the receive interrupt definition
+    long control = 0;
+    control = USLOSS_TERM_CTRL_RECV_INT(control);
+
+    //turn receive interrupts on for the terminal unit
+    USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)control);
+
+    MboxReceive(readMbox[unit], tempBuf, MAXLINE);
+    lineAmount--;
+    if (debugflag4)
+        USLOSS_Console("termReadReal(): got tempbuf: %s\n", tempBuf);
+
+    //just in case the buffer provided wasn't big enough for the whole line
+    int i;
+    for (i = 0; tempBuf[i] != '\0'; i++){
+        buffer[i] = tempBuf[i];
+    }
+
+    //return the amount of characters read
+    return i;
 }
 
 //utility function, will halt if kernel mode is called
@@ -580,4 +679,3 @@ void addToSleepList(procPtr toAdd){
     if (debugflag4)
         USLOSS_Console("addToSleepList(): Process %d added to SleepList, timeToWakeUp: %d\n",toAdd->pid, toAdd->timeToWakeUp);
 }
-
