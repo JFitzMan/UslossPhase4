@@ -24,6 +24,31 @@
 
 int TermWrite(char *buffer, int bufferSize, int unitID,
                        int *numCharsRead){
+	//check for illegal arguments
+	if (buffer == 0 || bufferSize <= 0 || unitID < 0){
+	 	if (debugflaglib4)
+			USLOSS_Console("TermRead(): invalid arguments! returning\n");
+		return -1;
+	}
+
+	 //build sysarg structure to pass to the syscall vec
+	systemArgs sysArg;
+
+	CHECKMODE;
+	sysArg.number = SYS_TERMWRITE;
+	sysArg.arg1 = buffer;
+	sysArg.arg2 = (void *) ( (long) bufferSize);
+	sysArg.arg3 = (void *) ( (long) unitID);
+
+	if (debugflaglib4)
+		USLOSS_Console("TermRead(): sysarg built, calling sysvec function\n");
+	USLOSS_Syscall(&sysArg);
+
+	int bytesWritten = (int ) ((void*) sysArg.arg2);
+	*numCharsRead = bytesWritten;
+
+	//return (int ) ((void*) sysArg.arg2);
+
 	return 0;
 }
 
@@ -53,8 +78,7 @@ int TermRead (char *buffer, int bufferSize, int unitID,
 	int bytesRead = (int ) ((void*) sysArg.arg2);
 	*numCharsRead = bytesRead;
 
-	return (int ) ((void*) sysArg.arg2);
-
+	//return (int ) ((void*) sysArg.arg2);
 
 	return 0;
 }

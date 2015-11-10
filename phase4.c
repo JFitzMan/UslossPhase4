@@ -25,7 +25,7 @@ char line [10][MAXLINE];
 //process table
 struct procSlot procTable[MAXPROC];
 
-int debugflag4 = 0;
+int debugflag4 = 1;
 
 static int ClockDriver(char *);
 //static int DiskDriver(char *);

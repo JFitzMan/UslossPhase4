@@ -47,6 +47,8 @@ extern  int  sleepReal(int seconds);
 extern  void termRead(systemArgs *args);
 extern  int termReadReal(char* buffer, int maxSize, int unit);
 
+extern  void termWrite(systemArgs *args);
+
 
 #define ERR_INVALID             -1
 #define ERR_OK                  0
