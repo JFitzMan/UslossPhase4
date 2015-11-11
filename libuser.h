@@ -5,6 +5,9 @@
 #ifndef _LIBUSER_H
 #define _LIBUSER_H
 
+#include <phase2.h>
+#include <usyscall.h>
+
 // Phase 3 -- User Function Prototypes
 extern int  Spawn(char *name, int (*func)(char *), char *arg, int stack_size,
                   int priority, int *pid);
