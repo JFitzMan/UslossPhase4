@@ -213,7 +213,18 @@ start3(void)
     
 }
 
-//the argument specifies which terminal the driver is for
+/*
+* The argument specifies which terminal the driver is for
+* Synchs with parent via semRunning
+* enables intterupts
+* Whie(not zapped)
+*   Wait for next terminal interrupt.
+*       (the interrupt can signal both a char for reading and a char for writing)
+*   Check if there is a char to be read
+*       Send the status register to the charInbox
+*   Check if there is a char to be wrote
+*       Send the status register to the charOutbox
+*/
 static int
 TermDriver(char *arg){
 
@@ -267,7 +278,15 @@ TermDriver(char *arg){
     return 0;
 
 }
-
+/*
+* synchs with start3 after starting via semRunning
+* While it isn't zapped
+*   Wait  on the charInbox for next char to be sent
+*   Build the line buffer
+*   Sends completed lines to readMbox
+*   
+*   ensures readMbox only has a max of 10 lines at a time
+*/
 static int
 TermReader(char *arg){
 
@@ -278,13 +297,13 @@ TermReader(char *arg){
 
 
     int curLineIndex = 0;
-    char newLine[MAXLINE];
+    char newLine[MAXLINE+1];
 
     procTable[me].privateMbox = MboxCreate(0, sizeof(result));
 
-    //initialize line storage
+    //initialize line buff
     int i;
-    for (i = 0; i < 10; i++){
+    for (i = 0; i < MAXLINE+1; i++){
         newLine[i] = '\0';
     }
 
@@ -314,7 +333,7 @@ TermReader(char *arg){
             USLOSS_Console("    TermReader(): TermReader %d  received a character: %c\n", unit+1, received);
 
         //check to see if current line is full first
-        if (curLineIndex == MAXLINE-1){
+        if (curLineIndex == MAXLINE){
             //finish off this line with a newline
             newLine[curLineIndex] = '\n';
             //send line to mailbox
@@ -329,11 +348,12 @@ TermReader(char *arg){
                 MboxSend(readMbox[unit], &newLine, MAXLINE);
             }
 
-            //clear the next storage space, and write char there
+            //clear out the newLine buffer
             curLineIndex = 0;
-            for (i = 0; i < MAXLINE; i++){
+            for (i = 0; i <= MAXLINE; i++){
                 newLine[i] = '\0';
             }
+            //write new char in first spot of newLinebuffer
             newLine[curLineIndex] = received;
             curLineIndex++;
         }
@@ -360,7 +380,7 @@ TermReader(char *arg){
             }
  
         }
-        //simply write the character
+        // if none of the above cases happen, simply write the character
         else{
             newLine[curLineIndex] = received;
             curLineIndex++;
@@ -376,7 +396,9 @@ TermReader(char *arg){
     return 0;
 
 }
-
+/*
+* 
+*/
 static int
 TermWriter(char *arg){
 
@@ -411,6 +433,13 @@ TermWriter(char *arg){
     return 0;
 }
 
+/*
+* synchs with start3 via semRunning
+* enables interrupts (clock interrupts)
+* While(not zapped)
+*    Wait for next clock interrupt (wait device call)
+*    Wakes up procs on the SleepList that are ready
+*/
 static int
 ClockDriver(char *arg)
 {
@@ -585,7 +614,9 @@ termWrite(systemArgs *args){
 
 }
 
-//utility function, will halt if kernel mode is called
+/*
+* utility function, will halt if kernel mode is called
+*/
 int 
 inKernelMode(char *procName)
 {
@@ -599,8 +630,10 @@ inKernelMode(char *procName)
     }
 }
 
-//utility function to be called one time in start3
-//removed it from start3 because it was very long
+/*
+* utility function to be called one time in start3
+* removed it from start3 because it was very long
+*/
 void
 initializeProcTable(){
 
@@ -645,14 +678,19 @@ initializeProcTable(){
 
 }
 
-//get a process table slot ready for bed
+/*
+* get a process table slot ready for bed
+*/
 void setUpSleepSlot(int pid){
     procTable[pid].pid = pid;
     procTable[pid].status = SLEEPING;
     procTable[pid].privateMbox = MboxCreate(0,50);
 }
 
-//wakes up the proc at the front of the SleepList, and updates the SleepList
+/*
+* wakes up the proc at the front of the SleepList
+* updates the SleepList
+*/
 void wakeUpNextProc(){
     //grab the proc to wake up
     procPtr toWake = SleepList;
@@ -671,14 +709,18 @@ void wakeUpNextProc(){
     MboxSend(toWake->privateMbox, NULL, 0);
 }
 
+/*
+* changes simulation back to user mode
+*/
 void setToUserMode(){
     unsigned int psr = USLOSS_PsrGet();
     psr = psr >> 1;
     psr = psr << 1;
     USLOSS_PsrSet(psr);
 }
-
-//adds to sleep list, and maintains the ordered queue
+/*
+* adds to sleep list, and maintains the ordered queue
+*/
 void addToSleepList(procPtr toAdd){
 
     //list is empty, toAdd is the front
@@ -718,7 +760,9 @@ void addToSleepList(procPtr toAdd){
     if (debugflag4)
         USLOSS_Console("addToSleepList(): Process %d added to SleepList, timeToWakeUp: %d\n",toAdd->pid, toAdd->timeToWakeUp);
 }
-
+/*
+* Appends a new line to the term.in file for the specified terminal
+*/
 void
 updateTermForQuit(int unit){
     FILE *filePtr;
@@ -734,5 +778,4 @@ updateTermForQuit(int unit){
 
     }
     fclose(filePtr);
-
 }
