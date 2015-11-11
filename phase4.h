@@ -39,6 +39,7 @@ extern  void setUpSleepSlot(int pid);
 extern  void setToUserMode();
 extern  void addToSleepList(procPtr toAdd);
 extern  void wakeUpNextProc();
+extern  void updateTermForQuit(int unit);
 
 //interface with system calls
 extern  void sleep(systemArgs *args);

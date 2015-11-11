@@ -68,6 +68,7 @@ start3(void)
     //link new system calls to syscall vec
     systemCallVec[SYS_SLEEP] = sleep;
     systemCallVec[SYS_TERMREAD]  = termRead;
+    systemCallVec[SYS_TERMWRITE] = termWrite;
 
     //initialize global mailbox for proc table editing
     procTable_mutex = MboxCreate(1, 0);
@@ -194,6 +195,7 @@ start3(void)
     int message [] = {-2};
     for (i = 0; i < USLOSS_TERM_UNITS; i++) {
         //termDrivers
+        updateTermForQuit(i);
         zap(termDriverPID[i]);
         join(&status);
 
@@ -452,6 +454,11 @@ DiskDriver(char *arg)
     return 0;
 }
 */
+
+/*
+* interface with Sleep and sleepReal.
+* Starts in kernel mode, switches to user before returning
+*/
 void
 sleep(systemArgs *args){
 
@@ -474,9 +481,14 @@ sleep(systemArgs *args){
     args->arg1 = 0;
     //set back to user mode before retuning to system call Sleep
     setToUserMode();
+    return;
 }
 
-//adds process to sleep list and blocks
+/*
+* adds process to sleep list
+* wakes up and returns when proc is woken up
+* Wake up is done when clockDriver sents to the privateMbox of the proc
+*/
 int 
 sleepReal(int seconds){
 
@@ -497,7 +509,10 @@ sleepReal(int seconds){
 
 }
 
-
+/*
+* Interfaces with TermRead and termReadReal. 
+* Starts in kernel mode, switches to user before returning
+*/
 void
 termRead(systemArgs *args){
 
@@ -511,11 +526,15 @@ termRead(systemArgs *args){
 
     args->arg2 = (void *) ( (long) numChars);
 
+    setToUserMode();
     return;
 
-
 }
-
+/*
+* Receives a line from the readMbox. 
+* Copies that line into the buffer via provided address.
+* Returns the amount of chars copied into the buffer
+*/
 int
 termReadReal(char* buffer, int maxSize, int unit){
 
@@ -544,6 +563,26 @@ termReadReal(char* buffer, int maxSize, int unit){
 
     //return the amount of characters read
     return i;
+}
+
+void 
+termWrite(systemArgs *args){
+
+    //extract arguments from syargs
+    //invalid args were already checked for
+    char * lineToWrite = (char*) args->arg1;
+    int lineSize = (int) args->arg2;
+    int unit = (int) args->arg3;
+
+    int numCharsWritten = termReadReal(lineToWrite, lineSize, unit);
+
+    args->arg2 = (void *) ( (long) numCharsWritten);
+
+    setToUserMode();
+
+    return;
+
+
 }
 
 //utility function, will halt if kernel mode is called
@@ -678,4 +717,22 @@ void addToSleepList(procPtr toAdd){
 
     if (debugflag4)
         USLOSS_Console("addToSleepList(): Process %d added to SleepList, timeToWakeUp: %d\n",toAdd->pid, toAdd->timeToWakeUp);
+}
+
+void
+updateTermForQuit(int unit){
+    FILE *filePtr;
+    char fileNameBuf[20];
+    sprintf(fileNameBuf, "%s%d%s", "term", unit, ".in");
+    if (debugflag4)
+        USLOSS_Console("updateTermForQuit(): build string for file name: %s\n",fileNameBuf);
+    //open the file, a means we are going to be appending
+    filePtr = fopen (fileNameBuf, "a");
+    int result = fprintf(filePtr, "End of USLOSS Simulation\n");
+    if (result <= 0){
+        USLOSS_Console("updateTermForQuit(): error writting to  file %s\n", fileNameBuf);
+
+    }
+    fclose(filePtr);
+
 }
