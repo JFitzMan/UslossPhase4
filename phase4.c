@@ -25,7 +25,7 @@ char line [10][MAXLINE];
 //process table
 struct procSlot procTable[MAXPROC];
 
-int debugflag4 = 1;
+int debugflag4 = 0;
 
 static int ClockDriver(char *);
 //static int DiskDriver(char *);
@@ -560,6 +560,7 @@ termRead(systemArgs *args){
 
 }
 /*
+* turns on terminal recieve interrupts
 * Receives a line from the readMbox. 
 * Copies that line into the buffer via provided address.
 * Returns the amount of chars copied into the buffer
@@ -585,11 +586,11 @@ termReadReal(char* buffer, int maxSize, int unit){
         USLOSS_Console("termReadReal(): got tempbuf: %s\n", tempBuf);
 
     //just in case the buffer provided wasn't big enough for the whole line
-    int i;
-    for (i = 0; tempBuf[i] != '\0'; i++){
+    int i = 0;
+    while(tempBuf[i] != '\0' && i < maxSize){
         buffer[i] = tempBuf[i];
+        i++;
     }
-
     //return the amount of characters read
     return i;
 }
