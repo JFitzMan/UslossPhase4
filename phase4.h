@@ -49,6 +49,7 @@ extern  void termRead(systemArgs *args);
 extern  int termReadReal(char* buffer, int maxSize, int unit);
 
 extern  void termWrite(systemArgs *args);
+extern  int  termWriteReal(char* lineToWrite, int lineSize, int unit);
 
 
 #define ERR_INVALID             -1

@@ -594,7 +594,10 @@ termReadReal(char* buffer, int maxSize, int unit){
     //return the amount of characters read
     return i;
 }
-
+/*
+* Interfaces with TermWrite and termWriteReal
+* Handles arguments
+*/
 void 
 termWrite(systemArgs *args){
 
@@ -604,7 +607,7 @@ termWrite(systemArgs *args){
     int lineSize = (int) args->arg2;
     int unit = (int) args->arg3;
 
-    int numCharsWritten = termReadReal(lineToWrite, lineSize, unit);
+    int numCharsWritten = termWriteReal(lineToWrite, lineSize, unit);
 
     args->arg2 = (void *) ( (long) numCharsWritten);
 
@@ -612,7 +615,11 @@ termWrite(systemArgs *args){
 
     return;
 
+}
 
+int 
+termWriteReal(char* lineToWrite, int lineSize, int unit){
+    return -1;
 }
 
 /*
