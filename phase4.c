@@ -200,10 +200,11 @@ start3(void)
         join(&status);
 
         //termReaders
-        MboxCondSend(charInbox[i], message, sizeof(message));
+        MboxSend(charInbox[i], message, sizeof(message));
         join(&status);
 
         //termWriters
+        MboxSend(writeMbox[i], message, sizeof(message));
         MboxCondSend(charOutbox[i], message, sizeof(message));
         join(&status);
 
@@ -261,12 +262,16 @@ TermDriver(char *arg){
         if(USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY){
             //let TermReader know there is a character to read
             message[0] = status;
+            if (debugflag4)
+                USLOSS_Console("    TermDriver%d(): receiving.\n", unit+1);
             MboxSend(charInbox[unit], message, sizeof(message));
         }
         if(USLOSS_TERM_STAT_XMIT(status) == USLOSS_DEV_READY){
             //let TermWriter know there is a character to write
             message[0] = status;
-            MboxSend(charOutbox[unit], message, sizeof(message));
+            if (debugflag4)
+                USLOSS_Console("    TermDriver%d(): sending. status: %d\n", unit+1, status);
+            MboxCondSend(charOutbox[unit], message, sizeof(message));
         }
     }
 
@@ -413,8 +418,8 @@ TermWriter(char *arg){
         USLOSS_Console("    TermWriter(): TermWriter %d starting\n", unit+1);
 
     while(! isZapped()) {
-        //wait for next char to arrive
-        MboxReceive(charOutbox[unit], result, sizeof(result));
+        //wait for pid to arrive from termWriteReal
+        MboxReceive(writeMbox[unit], result, sizeof(result));
 
         //result of -2 means that it was zapped!
         if (result[0] == -2){
@@ -423,6 +428,58 @@ TermWriter(char *arg){
             quit(0);
             return 0;
         }
+
+        //result contains the PID of the process doing the writing.
+        int pidToUnblock = result[0];
+        //get line to write
+        char lineToWrite [MAXLINE+1];
+        MboxReceive(writeMbox[unit], lineToWrite, MAXLINE+1);
+        if (debugflag4)
+            USLOSS_Console("    TermWriter%d(): Received line %s\n", unit+1, lineToWrite);
+
+        //turn on transmit interrupts
+        long control = 0;
+        control = USLOSS_TERM_CTRL_XMIT_INT(control);
+        //turn receive interrupts on for the terminal unit
+        USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)control);
+
+        //iterate over each character, write one at a time
+        int status;
+        int i = 0;
+        while (i < MAXLINE && lineToWrite[i] != '\n' ){
+            MboxReceive(charOutbox[unit], result, sizeof(result));
+
+            status = result[0];
+            if (debugflag4)
+                USLOSS_Console("    TermWriter%d(): Received status %d\n", unit+1, status);
+            control = 0;
+            control =  USLOSS_TERM_CTRL_CHAR(control, lineToWrite[i]);
+            control = USLOSS_TERM_CTRL_XMIT_INT(control);
+            control =  USLOSS_TERM_CTRL_XMIT_CHAR(control);
+
+            USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)control);
+
+            i++;  
+        }
+
+        MboxReceive(charOutbox[unit], result, sizeof(result));
+
+            status = result[0];
+            if (debugflag4)
+                USLOSS_Console("    TermWriter%d(): Received status %d\n", unit+1, status);
+            control = 0;
+            control =  USLOSS_TERM_CTRL_CHAR(control, '\n');
+            control = USLOSS_TERM_CTRL_XMIT_INT(control);
+            control =  USLOSS_TERM_CTRL_XMIT_CHAR(control);
+
+            USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)control);
+
+
+        //unblock waiting process after lines been written
+        MboxSend(procTable[pidToUnblock].privateMbox, NULL, 0);
+
+
+
         
     }// end while
 
@@ -627,9 +684,9 @@ termWriteReal(char* lineToWrite, int lineSize, int unit){
     }
     //send pid to writeMbox
     int message [] = {me};
-    MboxSend(writeMbox, message, sizeof(int));
+    MboxSend(writeMbox[unit], message, sizeof(int));
     //send line to write to terminal
-    MboxSend(writeMbox, lineToWrite, lineSize);
+    MboxSend(writeMbox[unit], lineToWrite, lineSize);
     //bloxk until message is completely written
     MboxReceive(procTable[me].privateMbox, NULL, 0);
 
