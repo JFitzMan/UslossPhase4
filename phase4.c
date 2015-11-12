@@ -127,7 +127,7 @@ start3(void)
         charInbox[i]  = MboxCreate(0, sizeof(result));
         charOutbox[i] = MboxCreate(0, sizeof(result));
         readMbox[i]   = MboxCreate(10, sizeof(char)*MAXLINE);
-        writeMbox[i]  = MboxCreate(10, sizeof(char)*MAXLINE);
+        writeMbox[i]  = MboxCreate(0, sizeof(char)*MAXLINE);
     }
 
 
@@ -619,7 +619,22 @@ termWrite(systemArgs *args){
 
 int 
 termWriteReal(char* lineToWrite, int lineSize, int unit){
-    return -1;
+    //get pid
+    int me = getpid();
+    //setup private mbox
+    if (procTable[me].privateMbox == -1){
+        procTable[me].privateMbox = MboxCreate(0, 50);
+    }
+    //send pid to writeMbox
+    int message [] = {me};
+    MboxSend(writeMbox, message, sizeof(int));
+    //send line to write to terminal
+    MboxSend(writeMbox, lineToWrite, lineSize);
+    //bloxk until message is completely written
+    MboxReceive(procTable[me].privateMbox, NULL, 0);
+
+
+    return lineSize;
 }
 
 /*
