@@ -126,13 +126,34 @@ int  DiskRead (void *diskBuffer, int unit, int track, int first,
 	sysArg.arg4 = (void *) ( (long) first);
 	sysArg.arg5 = (void *) ( (long) unit);
 	USLOSS_Syscall(&sysArg);
+	*status = 0;
 	//once it wakes up, return arg1
 	return (int) sysArg.arg1;
 }
 
 int  DiskWrite(void *diskBuffer, int unit, int track, int first,
                        int sectors, int *status){
-	return 0;
+	//just checks for obvious illegal values for now, adjust as needed
+	if (unit < 0 || track < 0 || first < 0 || sectors < 0){
+		if (debugflaglib4)
+			USLOSS_Console("DiskRead(): illegal value(s) given, returning -1\n");
+		return -1;
+	}
+
+	//build sysarg structure to pass to the syscall vec
+	systemArgs sysArg;
+
+	CHECKMODE;
+	sysArg.number = SYS_DISKREAD;
+	sysArg.arg1 =  diskBuffer;
+	sysArg.arg2 = (void *) ( (long) sectors);
+	sysArg.arg3 = (void *) ( (long) track);
+	sysArg.arg4 = (void *) ( (long) first);
+	sysArg.arg5 = (void *) ( (long) unit);
+	USLOSS_Syscall(&sysArg);
+	*status = 0;
+	//once it wakes up, return arg1
+	return (int) sysArg.arg1;
 }
 
 int  DiskSize (int unit, int *sector, int *track, int *disk){

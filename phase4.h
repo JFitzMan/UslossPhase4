@@ -54,6 +54,12 @@ extern  int  termWriteReal(char* lineToWrite, int lineSize, int unit);
 extern  void diskSize(systemArgs *args);
 extern  void diskSizeReal(int unit, int *sectorSize, int *trackSize, int *diskSize);
 
+extern  void diskWrite(systemArgs *args);
+extern  int  diskWriteReal(void *toTransfer, int sectorsToWrite, int startingTrack, int startingSector, int unit);
+
+extern  void diskRead(systemArgs *args);
+extern  int  diskReadReal();
+
 
 #define ERR_INVALID             -1
 #define ERR_OK                  0

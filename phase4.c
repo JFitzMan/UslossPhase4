@@ -30,7 +30,7 @@ struct procSlot procTable[MAXPROC];
 int debugflag4 = 0;
 
 static int ClockDriver(char *);
-//static int DiskDriver(char *);
+static int DiskDriver(char *);
 static int TermDriver(char *);
 static int TermReader(char *);
 static int TermWriter(char *);
@@ -52,6 +52,7 @@ start3(void)
     int     termDriverPID[USLOSS_TERM_UNITS];
     int     termReaderPID[USLOSS_TERM_UNITS];
     int     termWriterPID[USLOSS_TERM_UNITS];
+    int     diskDriverPID[USLOSS_DISK_UNITS];
 
     int		pid;
     int		status;
@@ -110,10 +111,10 @@ start3(void)
      * driver, and perhaps do something with the pid returned.
      */
 
-     /*
+    /*
     for (i = 0; i < USLOSS_DISK_UNITS; i++) {
         sprintf(buf, "%d", i);
-        pid = fork1(name, DiskDriver, buff, USLOSS_MIN_STACK, 2);
+        diskDriverPID[i] = fork1(name, DiskDriver, buff, USLOSS_MIN_STACK, 2);
         if (pid < 0) {
             USLOSS_Console("start3(): Can't create term driver %d\n", i);
             USLOSS_Halt(1);
@@ -123,6 +124,8 @@ start3(void)
     sempReal(semRunning);
 
     */
+
+    
 
     /*
     * create terminal mailboxes
@@ -218,6 +221,19 @@ start3(void)
     quit(0);
     
 }
+
+
+static int
+DiskDriver(char *arg)
+{
+    int unit = atoi( (char *) arg);     // Unit is passed as arg.
+
+
+
+    quit(0);
+    return 0;
+}
+
 
 /*
 * The argument specifies which terminal the driver is for
@@ -543,14 +559,6 @@ ClockDriver(char *arg)
     quit(0);
     return 0;
 }
-/*
-static int
-DiskDriver(char *arg)
-{
-    int unit = atoi( (char *) arg); 	// Unit is passed as arg.
-    return 0;
-}
-*/
 
 /*
 * interface with Sleep and sleepReal.
@@ -639,6 +647,34 @@ void diskSizeReal(int unit, int *sectorSize, int *trackSize, int *diskSize){
     *diskSize = size;
 
 }
+
+void 
+diskWrite(systemArgs *args){
+
+    if (debugflag4)
+        USLOSS_Console("diskWrite: extracting arguments\n");
+
+    void *toTransfer = args->arg1;
+    int sectorsToWrite = (int)args->arg2;
+    int startingTrack = (int) args->arg3;
+    int startingSector = (int) args->arg4;
+    int unit = (int) args->arg5;
+
+    int status = diskWriteReal(toTransfer, sectorsToWrite, startingTrack, startingSector, unit);
+    if(status != 0){
+        USLOSS_Console("diskWrite(): problem writing to disk\n");
+    }
+    args->arg1 = (void *) ( (long) status);
+
+
+}
+
+int
+diskWriteReal(void *toTransfer, int sectorsToWrite, int startingTrack, int startingSector, int unit){
+
+
+}
+
 
 /*
 * Interfaces with TermRead and termReadReal. 
