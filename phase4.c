@@ -27,7 +27,7 @@ char line [10][MAXLINE];
 //process table
 struct procSlot procTable[MAXPROC];
 
-int debugflag4 = 0;
+int debugflag4 = 1;
 
 static int ClockDriver(char *);
 //static int DiskDriver(char *);
@@ -71,6 +71,7 @@ start3(void)
     systemCallVec[SYS_SLEEP] = sleep;
     systemCallVec[SYS_TERMREAD]  = termRead;
     systemCallVec[SYS_TERMWRITE] = termWrite;
+    systemCallVec[SYS_DISKSIZE] = diskSize;
 
     //initialize global mailbox for proc table editing
     procTable_mutex = MboxCreate(1, 0);
@@ -602,6 +603,37 @@ sleepReal(int seconds){
     if (procTable[me].timeToWakeUp < curTime + seconds*1000000)
         return -1;
     return 0;
+
+}
+
+void
+diskSize(systemArgs *args){
+
+    int unit = (int)args->arg1;
+    if (debugflag4)
+        USLOSS_Console("diskSize(): calling diskReadReal\n");
+    int sectorSize = 0;
+    int trackSize = 0;
+    int diskSize = 0;
+    diskSizeReal(unit, &sectorSize, &trackSize, &diskSize);
+    args->arg1 = (void *) ( (long) sectorSize);
+    args->arg2 = (void *) ( (long) trackSize);
+    args->arg3 = (void *) ( (long) diskSize);
+
+}
+
+void diskSizeReal(int unit, int *sectorSize, int *trackSize, int *diskSize){
+    *sectorSize = USLOSS_DISK_SECTOR_SIZE;
+    *trackSize = USLOSS_DISK_TRACK_SIZE;
+
+    USLOSS_DeviceRequest request;
+    request.opr = USLOSS_DISK_TRACKS;
+    int size = 0;
+    request.reg1 = &size;
+    request.reg2 = &size;
+    USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
+    if (debugflag4)
+        USLOSS_Console("diskSize(): size = %d \n", size);
 
 }
 

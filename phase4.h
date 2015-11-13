@@ -51,6 +51,9 @@ extern  int termReadReal(char* buffer, int maxSize, int unit);
 extern  void termWrite(systemArgs *args);
 extern  int  termWriteReal(char* lineToWrite, int lineSize, int unit);
 
+extern  void diskSize(systemArgs *args);
+extern  void diskSizeReal(int unit, int *sectorSize, int *trackSize, int *diskSize);
+
 
 #define ERR_INVALID             -1
 #define ERR_OK                  0

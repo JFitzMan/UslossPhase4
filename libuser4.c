@@ -136,6 +136,21 @@ int  DiskWrite(void *diskBuffer, int unit, int track, int first,
 }
 
 int  DiskSize (int unit, int *sector, int *track, int *disk){
+	if (unit < 0){
+		if (debugflaglib4)
+			USLOSS_Console("DiskSize(): illegal value(s) given, returning -1\n");
+		return -1;
+	}
+	systemArgs sysArg;
+
+	CHECKMODE;
+	sysArg.number = SYS_DISKSIZE;
+	sysArg.arg1 = (void *) ( (long) unit);
+	USLOSS_Syscall(&sysArg);
+	*sector = sysArg.arg1;
+	*track = sysArg.arg2;
+	*disk = sysArg.arg3; 
+
 	return 0;
 }
 
