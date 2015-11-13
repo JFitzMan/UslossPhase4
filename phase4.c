@@ -27,7 +27,7 @@ char line [10][MAXLINE];
 //process table
 struct procSlot procTable[MAXPROC];
 
-int debugflag4 = 1;
+int debugflag4 = 0;
 
 static int ClockDriver(char *);
 //static int DiskDriver(char *);
@@ -632,8 +632,11 @@ void diskSizeReal(int unit, int *sectorSize, int *trackSize, int *diskSize){
     request.reg1 = &size;
     request.reg2 = &size;
     USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
+    int status = 0;
+    waitDevice(USLOSS_DISK_DEV, unit, &status);
     if (debugflag4)
         USLOSS_Console("diskSize(): size = %d \n", size);
+    *diskSize = size;
 
 }
 
