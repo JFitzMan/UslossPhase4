@@ -11,6 +11,7 @@
 
 int semRunning;
 int semTermWrite;
+int semReadLines;
 int procTable_mutex;
 
 //terminal mailboxes
@@ -19,7 +20,7 @@ int charOutbox[USLOSS_TERM_UNITS];
 int readMbox[USLOSS_TERM_UNITS];
 int writeMbox[USLOSS_TERM_UNITS];
 
-int lineAmount = 0;
+int lineAmount[USLOSS_TERM_UNITS] = {0,0,0,0};
 char line [10][MAXLINE];
 
 
@@ -87,6 +88,7 @@ start3(void)
      */
     semRunning = semcreateReal(0);
     semTermWrite = semcreateReal(1);
+    semReadLines = semcreateReal(1);
     clockPID = fork1("Clock driver", ClockDriver, NULL, USLOSS_MIN_STACK, 2);
     if (clockPID < 0) {
 	   USLOSS_Console("start3(): Can't create clock driver\n");
@@ -333,17 +335,19 @@ TermReader(char *arg){
 
         //store character in received variable
         char received = USLOSS_TERM_STAT_CHAR(result[0]);
-        /*if (debugflag4)
-            USLOSS_Console("    TermReader(): TermReader %d  received a character: %c\n", unit+1, received);*/
+        if (debugflag4)
+            USLOSS_Console("    TermReader(): TermReader %d  received a character: %c\n", unit+1, received);
 
         //check to see if current line is full first
         if (curLineIndex == MAXLINE){
             //finish off this line with a newline
             newLine[curLineIndex] = '\n';
             //send line to mailbox
-            if (lineAmount <10){
-                MboxSend(readMbox[unit], &newLine, MAXLINE);
-                lineAmount++;
+            if (lineAmount[unit] <10){
+                if (debugflag4)
+                    USLOSS_Console("    TermReader(): TermReader %d  sending line!\n", unit+1);
+                MboxSend(readMbox[unit], &newLine, MAXLINE+1);
+                lineAmount[unit]++;
             }
             else{
                 //make room for next line, get rid of oldest line
@@ -366,11 +370,15 @@ TermReader(char *arg){
         else if(received == '\n'){
             newLine[curLineIndex] = '\n';
             //send line to mailbox
-            if (lineAmount <10){
+            if (lineAmount[unit] <10){
+                if (debugflag4)
+                    USLOSS_Console("    TermReader(): TermReader %d  sending line!\n", unit+1);
                 MboxSend(readMbox[unit], &newLine, MAXLINE);
-                lineAmount++;
+                lineAmount[unit]++;
             }
             else{
+                if (debugflag4)
+                    USLOSS_Console("    TermReader(): TermReader %d  receiving then sending line!\n", unit+1);
                 //make room for next line, get rid of oldest line
                 MboxReceive(readMbox[unit], &temp, MAXLINE);
                 //send new line
@@ -640,7 +648,7 @@ termReadReal(char* buffer, int maxSize, int unit){
     USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void *)control);
 
     MboxReceive(readMbox[unit], tempBuf, MAXLINE);
-    lineAmount--;
+    lineAmount[unit]--;
     if (debugflag4)
         USLOSS_Console("termReadReal(): got tempbuf: %s\n", tempBuf);
 
