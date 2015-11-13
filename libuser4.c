@@ -41,7 +41,7 @@ int TermWrite(char *buffer, int bufferSize, int unitID,
 	sysArg.arg3 = (void *) ( (long) unitID);
 
 	if (debugflaglib4)
-		USLOSS_Console("TermRead(): sysarg built, calling sysvec function\n");
+		USLOSS_Console("TermWrite(): sysarg built, calling sysvec function\n");
 	USLOSS_Syscall(&sysArg);
 
 	int bytesWritten = (int ) ((void*) sysArg.arg2);

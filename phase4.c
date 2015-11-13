@@ -10,6 +10,7 @@
 
 
 int semRunning;
+int semTermWrite;
 int procTable_mutex;
 
 //terminal mailboxes
@@ -85,6 +86,7 @@ start3(void)
      * be used instead -- your choice.
      */
     semRunning = semcreateReal(0);
+    semTermWrite = semcreateReal(1);
     clockPID = fork1("Clock driver", ClockDriver, NULL, USLOSS_MIN_STACK, 2);
     if (clockPID < 0) {
 	   USLOSS_Console("start3(): Can't create clock driver\n");
@@ -126,8 +128,8 @@ start3(void)
     for (i = 0; i < USLOSS_TERM_UNITS; i++) {
         charInbox[i]  = MboxCreate(0, sizeof(result));
         charOutbox[i] = MboxCreate(0, sizeof(result));
-        readMbox[i]   = MboxCreate(10, sizeof(char)*MAXLINE);
-        writeMbox[i]  = MboxCreate(0, sizeof(char)*MAXLINE);
+        readMbox[i]   = MboxCreate(10, sizeof(char)*MAXLINE+1);
+        writeMbox[i]  = MboxCreate(0, sizeof(char)*MAXLINE+1);
     }
 
 
@@ -249,8 +251,8 @@ TermDriver(char *arg){
 
     while(! isZapped()) {
         result = waitDevice(USLOSS_TERM_DEV, unit, &status);
-        if (debugflag4)
-            USLOSS_Console("    TermDriver%d(): TermDriver %d returned from wait device\n", unit+1, unit+1);
+        /*if (debugflag4)
+            USLOSS_Console("    TermDriver%d(): TermDriver %d returned from wait device\n", unit+1, unit+1);*/
 
         //if WaitDeivce returned 0, process was zapped! Quit
         if (result != 0) {
@@ -262,15 +264,12 @@ TermDriver(char *arg){
         if(USLOSS_TERM_STAT_RECV(status) == USLOSS_DEV_BUSY){
             //let TermReader know there is a character to read
             message[0] = status;
-            if (debugflag4)
-                USLOSS_Console("    TermDriver%d(): receiving.\n", unit+1);
             MboxSend(charInbox[unit], message, sizeof(message));
         }
         if(USLOSS_TERM_STAT_XMIT(status) == USLOSS_DEV_READY){
             //let TermWriter know there is a character to write
             message[0] = status;
-            if (debugflag4)
-                USLOSS_Console("    TermDriver%d(): sending. status: %d\n", unit+1, status);
+            
             MboxCondSend(charOutbox[unit], message, sizeof(message));
         }
     }
@@ -334,8 +333,8 @@ TermReader(char *arg){
 
         //store character in received variable
         char received = USLOSS_TERM_STAT_CHAR(result[0]);
-        if (debugflag4)
-            USLOSS_Console("    TermReader(): TermReader %d  received a character: %c\n", unit+1, received);
+        /*if (debugflag4)
+            USLOSS_Console("    TermReader(): TermReader %d  received a character: %c\n", unit+1, received);*/
 
         //check to see if current line is full first
         if (curLineIndex == MAXLINE){
@@ -415,7 +414,7 @@ TermWriter(char *arg){
 
     semvReal(semRunning);
     if (debugflag4)
-        USLOSS_Console("    TermWriter(): TermWriter %d starting\n", unit+1);
+        USLOSS_Console("    TermWriter(): TermWriter %d starting\n", unit);
 
     while(! isZapped()) {
         //wait for pid to arrive from termWriteReal
@@ -424,18 +423,20 @@ TermWriter(char *arg){
         //result of -2 means that it was zapped!
         if (result[0] == -2){
             if (debugflag4)
-                USLOSS_Console("    TermWriter(): TermWriter %d  zapped! quitting\n", unit+1);
+                USLOSS_Console("    TermWriter(): TermWriter %d  zapped! quitting\n", unit);
             quit(0);
             return 0;
         }
 
         //result contains the PID of the process doing the writing.
         int pidToUnblock = result[0];
+        if (debugflag4)
+            USLOSS_Console("    TermWriter(): TermWriter %d  got pid %d\n", unit, pidToUnblock);
         //get line to write
         char lineToWrite [MAXLINE+1];
         MboxReceive(writeMbox[unit], lineToWrite, MAXLINE+1);
         if (debugflag4)
-            USLOSS_Console("    TermWriter%d(): Received line %s\n", unit+1, lineToWrite);
+            USLOSS_Console("TermWriter%d(): got line %s\n", unit, lineToWrite);
 
         //turn on transmit interrupts
         long control = 0;
@@ -451,7 +452,7 @@ TermWriter(char *arg){
 
             status = result[0];
             if (debugflag4)
-                USLOSS_Console("    TermWriter%d(): Received status %d\n", unit+1, status);
+                USLOSS_Console("    TermWriter%d(): Received status %d\n", unit, status);
             control = 0;
             control =  USLOSS_TERM_CTRL_CHAR(control, lineToWrite[i]);
             control = USLOSS_TERM_CTRL_XMIT_INT(control);
@@ -466,7 +467,7 @@ TermWriter(char *arg){
 
             status = result[0];
             if (debugflag4)
-                USLOSS_Console("    TermWriter%d(): Received status %d\n", unit+1, status);
+                USLOSS_Console("    TermWriter%d(): Received status %d\n", unit, status);
             control = 0;
             control =  USLOSS_TERM_CTRL_CHAR(control, '\n');
             control = USLOSS_TERM_CTRL_XMIT_INT(control);
@@ -484,7 +485,7 @@ TermWriter(char *arg){
     }// end while
 
     if (debugflag4)
-        USLOSS_Console("    TermWriter%d(): Zapped! Quitting\n", unit+1);
+        USLOSS_Console("    TermWriter%d(): Zapped! Quitting\n", unit);
     
     quit(0);
     return 0;
@@ -517,6 +518,7 @@ ClockDriver(char *arg)
 	    result = waitDevice(USLOSS_CLOCK_DEV, 0, &status);
         if (debugflag4)
             USLOSS_Console("    ClockDriver(): checking for procs to wake up\n");
+            //USLOSS_Console("All work and no play makes Jordan a dull boy\n");
 	    if (result != 0) {
 	       return 0;
 	    }
@@ -663,8 +665,12 @@ termWrite(systemArgs *args){
     char * lineToWrite = (char*) args->arg1;
     int lineSize = (int) args->arg2;
     int unit = (int) args->arg3;
+    if (debugflag4)
+        USLOSS_Console("termWrite(): calling termWriteReal\n");
+
 
     int numCharsWritten = termWriteReal(lineToWrite, lineSize, unit);
+
 
     args->arg2 = (void *) ( (long) numCharsWritten);
 
@@ -684,11 +690,23 @@ termWriteReal(char* lineToWrite, int lineSize, int unit){
     }
     //send pid to writeMbox
     int message [] = {me};
-    MboxSend(writeMbox[unit], message, sizeof(int));
+    if (debugflag4)
+        USLOSS_Console("termWriteReal(): sending pid to term %d\n", unit);
+    //semaphore to ensure the terminal gets the pid and the line of the same proc.
+    sempReal(semTermWrite);
+    MboxSend(writeMbox[unit], message, sizeof(message));
+    if (debugflag4)
+        USLOSS_Console("termWriteReal(): sending line to term %d\n", unit);
     //send line to write to terminal
     MboxSend(writeMbox[unit], lineToWrite, lineSize);
+    if (debugflag4)
+        USLOSS_Console("termWriteReal(): blocking\n");
     //bloxk until message is completely written
+    semvReal(semTermWrite);
+
     MboxReceive(procTable[me].privateMbox, NULL, 0);
+    if (debugflag4)
+        USLOSS_Console("termWriteReal(): done\n");
 
 
     return lineSize;
