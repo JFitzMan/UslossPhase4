@@ -284,12 +284,18 @@ DiskDriver(char *arg)
         //wait until there is a request generated
         sempReal(semDiskQ[unit]);
 
+        //update the queue if need be
         if(diskQ[unit][diskPosition[unit]] == NULL){
             if(diskPosition[unit] == QUEUE1)
                 diskPosition[unit] = QUEUE2;
             else
                 diskPosition[unit] = QUEUE1;
         }
+        //just in case there are no pending requests
+        if (diskQ[unit][diskPosition[unit]] != NULL){
+            
+        }
+
 
     }
      
@@ -697,8 +703,7 @@ diskSize(systemArgs *args){
 void diskSizeReal(int unit, int *sectorSize, int *trackSize, int *diskSize){
     *sectorSize = USLOSS_DISK_SECTOR_SIZE;
     *trackSize = USLOSS_DISK_TRACK_SIZE;
-   
-    *diskSize = tracks[unit];
+    *diskSize = tracksg[unit];
 
 }
 

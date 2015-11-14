@@ -83,7 +83,8 @@ struct procSlot {
 	procPtr		nextProc;
 	int			privateMbox;
 	int			termCode;
-	int 		timeToWakeUp;
+	int 		timeToWakeUp
+	USLOSS_DeviceRequest req;	
 
 
 };
