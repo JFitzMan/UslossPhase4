@@ -259,7 +259,7 @@ DiskDriver(char *arg)
     int status = 0;
     waitDevice(USLOSS_DISK_DEV, unit, &status);
     if (debugflag4)
-        USLOSS_Console("    DiskDriver%d(): DiskSize = %d \n", unit, size);
+        USLOSS_Console("    DiskDriver%d(): Starting. Disk size = %d \n", unit, size);
 
     //initialize trackSize
     tracks[unit] = size;
@@ -698,7 +698,7 @@ void diskSizeReal(int unit, int *sectorSize, int *trackSize, int *diskSize){
     *sectorSize = USLOSS_DISK_SECTOR_SIZE;
     *trackSize = USLOSS_DISK_TRACK_SIZE;
    
-    *diskSize = trackSize[unit];
+    *diskSize = tracks[unit];
 
 }
 
