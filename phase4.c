@@ -20,6 +20,12 @@ int charOutbox[USLOSS_TERM_UNITS];
 int readMbox[USLOSS_TERM_UNITS];
 int writeMbox[USLOSS_TERM_UNITS];
 
+//disk info arrays and sems
+static procPtr diskQ [USLOSS_DISK_UNITS][2];
+static int tracks[USLOSS_DISK_UNITS];
+static int diskArm[USLOSS_DISK_UNITS];
+int semDiskQ[USLOSS_DISK_UNITS];
+
 int lineAmount[USLOSS_TERM_UNITS] = {0,0,0,0};
 char line [10][MAXLINE];
 
@@ -27,7 +33,7 @@ char line [10][MAXLINE];
 //process table
 struct procSlot procTable[MAXPROC];
 
-int debugflag4 = 0;
+int debugflag4 = 1;
 
 static int ClockDriver(char *);
 static int DiskDriver(char *);
@@ -44,6 +50,7 @@ start3(void)
 {
     char	name[128];
     char    termbuf[10];
+    char    buf[128];
     int		i;
 
     //Driver PIDs for later quitting
@@ -111,11 +118,11 @@ start3(void)
      * driver, and perhaps do something with the pid returned.
      */
 
-    /*
+    
     for (i = 0; i < USLOSS_DISK_UNITS; i++) {
         sprintf(buf, "%d", i);
-        diskDriverPID[i] = fork1(name, DiskDriver, buff, USLOSS_MIN_STACK, 2);
-        if (pid < 0) {
+        diskDriverPID[i] = fork1(name, DiskDriver, buf, USLOSS_MIN_STACK, 2);
+        if (diskDriverPID[i] < 0) {
             USLOSS_Console("start3(): Can't create term driver %d\n", i);
             USLOSS_Halt(1);
         }
@@ -123,7 +130,7 @@ start3(void)
     sempReal(semRunning);
     sempReal(semRunning);
 
-    */
+    
 
     
 
@@ -217,6 +224,12 @@ start3(void)
         join(&status);
 
     }
+    //disk drivers
+    for (i = 0; i < USLOSS_DISK_UNITS; i++) {
+        zap(diskDriverPID[i]);
+        join(&status);
+    }
+
     // eventually, at the end:
     quit(0);
     
@@ -228,7 +241,35 @@ DiskDriver(char *arg)
 {
     int unit = atoi( (char *) arg);     // Unit is passed as arg.
 
+    //get the disk size
+    USLOSS_DeviceRequest request;
+    request.opr = USLOSS_DISK_TRACKS;
+    int size = 0;
+    request.reg1 = &size;
+    USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
+    int status = 0;
+    waitDevice(USLOSS_DISK_DEV, unit, &status);
+    if (debugflag4)
+        USLOSS_Console("    DiskDriver%d(): DiskSize = %d \n", unit, size);
 
+    tracks[unit] = size;
+
+    //initialize read and write queues
+    diskQ[unit][READ] = NULL;
+    diskQ[unit][WRITE] = NULL;
+
+    //initialize semaphores
+    semDiskQ[unit] = semcreateReal(0);
+
+    //enable interrupts
+    USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
+
+    semvReal(semRunning);
+
+    while(!isZapped()){
+
+    }
+     
 
     quit(0);
     return 0;
@@ -633,18 +674,8 @@ diskSize(systemArgs *args){
 void diskSizeReal(int unit, int *sectorSize, int *trackSize, int *diskSize){
     *sectorSize = USLOSS_DISK_SECTOR_SIZE;
     *trackSize = USLOSS_DISK_TRACK_SIZE;
-
-    USLOSS_DeviceRequest request;
-    request.opr = USLOSS_DISK_TRACKS;
-    int size = 0;
-    request.reg1 = &size;
-    request.reg2 = &size;
-    USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
-    int status = 0;
-    waitDevice(USLOSS_DISK_DEV, unit, &status);
-    if (debugflag4)
-        USLOSS_Console("diskSize(): size = %d \n", size);
-    *diskSize = size;
+   
+    *diskSize = trackSize[unit];
 
 }
 

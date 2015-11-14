@@ -65,10 +65,13 @@ extern  int  diskReadReal();
 #define ERR_OK                  0
 
 //proc table definitions
-#define JOIN_BLOCKED 1;
-#define READY        2;
-#define WAIT_BLOCKED 3;
-#define SLEEPING     4;
+#define JOIN_BLOCKED 1
+#define READY        2
+#define WAIT_BLOCKED 3
+#define SLEEPING     4
+
+#define READ 0
+#define WRITE  0
 
 
 
