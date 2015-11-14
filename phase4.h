@@ -55,12 +55,12 @@ extern  void diskSize(systemArgs *args);
 extern  void diskSizeReal(int unit, int *sectorSize, int *trackSize, int *diskSize);
 
 extern  void diskWrite(systemArgs *args);
-extern  int  diskWriteReal(void *toTransfer, int sectorsToWrite, int startingTrack, int startingSector, int unit);
+extern  int  diskWriteReal(char *toTransfer, int sectorsToWrite, int startingTrack, int startingSector, int unit);
 
 extern  void diskRead(systemArgs *args);
-extern  int  diskReadReal();
+extern  int  diskReadReal(char *toTransfer, int sectorsToRead, int startingTrack, int startingSector, int unit);
 
-extern  int insertDiskRequest(int pid, int unit);
+extern  int insertDiskRequest(int pid, int unit, int totalSectors, int startingSector);
 extern  void addToDiskQ(procPtr toAdd, int unit, int position);
 
 
@@ -89,6 +89,7 @@ struct procSlot {
 	int 		timeToWakeUp;
 	USLOSS_DeviceRequest req;	
 	int 		startingTrack;
+	int 		totalSectors;
 
 
 

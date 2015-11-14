@@ -302,15 +302,19 @@ DiskDriver(char *arg)
 
             //DO REQUEST 
             ///adjust the arm to the startingTrack
-            diskArm[unit] = diskQ[unit][diskPosition[unit]]->startingTrack;
-            USLOSS_DeviceRequest request;
-            request.opr = USLOSS_DISK_SEEK;
-            request.reg1 = diskArm[unit];
-            USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
-            int status = 0;
-            waitDevice(USLOSS_DISK_DEV, unit, &status);
+            if(diskArm[unit] != diskQ[unit][diskPosition[unit]]->startingTrack){
+                diskArm[unit] = diskQ[unit][diskPosition[unit]]->startingTrack;
+                USLOSS_DeviceRequest request;
+                request.opr = USLOSS_DISK_SEEK;
+                request.reg1 = diskArm[unit];
+                USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
+                int status = 0;
+                waitDevice(USLOSS_DISK_DEV, unit, &status);
+            }
 
             //do request
+            int sectorToWrite = (int)diskQ[unit][diskPosition[unit]]->req.reg1;
+
             USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &diskQ[unit][diskPosition[unit]]->req);
             status = 0;
             waitDevice(USLOSS_DISK_DEV, unit, &status);
@@ -323,9 +327,12 @@ DiskDriver(char *arg)
             else{
                 diskQ[unit][diskPosition[unit]] = diskQ[unit][diskPosition[unit]]->nextProc;
             }
+
             if (debugflag4)
                 USLOSS_Console("    DiskDriver%d(): waking up proc%d\n", unit, pidOfReq);
             MboxSend(procTable[pidOfReq].privateMbox, NULL, 0);
+            
+            
         }
 
 
@@ -761,23 +768,38 @@ diskWrite(systemArgs *args){
 }
 
 int
-diskWriteReal(void *toTransfer, int sectorsToWrite, int startingTrack, int startingSector, int unit){
+diskWriteReal(char *toTransfer, int sectorsToWrite, int startingTrack, int startingSector, int unit){
 
     int me = getpid();
+    char buf[512];
 
-    //create the disk request for each sector 
-    USLOSS_DeviceRequest request;
-    request.opr = USLOSS_DISK_WRITE;
-    request.reg1 = (void *) ( (long) startingSector);
-    request.reg2 = toTransfer;
+    int i;
+    for (i = 0; i < sectorsToWrite; i++){
+        //create the disk request for each sector 
 
-    procTable[me].req = request;
-    procTable[me].startingTrack = startingTrack;
-    procTable[me].privateMbox = MboxCreate(0,50);
-    procTable[me].pid = me;
+        int j;
+        for (j = 0; j < 512; j++){
+            buf[j] = toTransfer[512*i+j];
+        }
+        if (debugflag4)
+        USLOSS_Console("diskWriteReal():  buf to write: %s\n", buf);
 
-    //will insert to the diskQ and return when the request is compelted
-    return insertDiskRequest(me, unit);
+        //create the disk request for each sector 
+        USLOSS_DeviceRequest request;
+        request.opr = USLOSS_DISK_WRITE;
+        request.reg1 = (void *) ( (long) startingSector+i);
+        request.reg2 = buf;
+
+        procTable[me].req = request;
+        procTable[me].startingTrack = startingTrack;
+        procTable[me].privateMbox = MboxCreate(0,50);
+        procTable[me].pid = me;
+        procTable[me].totalSectors = sectorsToWrite;
+
+        //will insert to the diskQ and return when the request is compelted
+        insertDiskRequest(me, unit, sectorsToWrite, startingSector);
+    }
+    return 0;
 }
 
 void 
@@ -800,40 +822,50 @@ diskRead(systemArgs *args){
 }
 
 int
-diskReadReal(void *toTransfer, int sectorsToRead, int startingTrack, int startingSector, int unit){
+diskReadReal(char *toTransfer, int sectorsToRead, int startingTrack, int startingSector, int unit){
     int me = getpid();
 
-    //create the disk request for each sector 
-    USLOSS_DeviceRequest request;
-    request.opr = USLOSS_DISK_READ;
-    request.reg1 = (void *) ( (long) startingSector);
-    request.reg2 = toTransfer;
+    int i;
+    char buf[512];
+    for (i = 0; i < sectorsToRead; i++){
+        //create the disk request for each sector 
 
-    procTable[me].req = request;
-    procTable[me].startingTrack = startingTrack;
-    procTable[me].privateMbox = MboxCreate(0,50);
-    procTable[me].pid = me;
+        USLOSS_DeviceRequest request;
+        request.opr = USLOSS_DISK_READ;
+        request.reg1 = (void *) ( (long) startingSector+i);
+        request.reg2 = buf;
 
-    //will insert to the diskQ and return when the request is compelted
-    return insertDiskRequest(me, unit);
+        procTable[me].req = request;
+        procTable[me].startingTrack = startingTrack;
+        procTable[me].privateMbox = MboxCreate(0,50);
+        procTable[me].pid = me;
+        procTable[me].totalSectors = sectorsToRead;
+
+        //will insert to the diskQ and return when the request is completed
+        insertDiskRequest(me, unit, sectorsToRead, startingSector);
+
+        strcpy(toTransfer+512*i, buf);
+    }
+
+    return 0;
 }
 
 
-int insertDiskRequest(int pid, int unit){
+int insertDiskRequest(int pid, int unit, int totalSectors, int startingSector){
+        //select the proper Q to insert proc into
+        if(procTable[pid].startingTrack > diskArm[unit]){
+            //it will go on the current queue
+            addToDiskQ(&procTable[pid], unit, diskPosition[unit]);
 
-    //select the proper Q to insert proc into
-    if(procTable[pid].startingTrack > diskArm[unit]){
-        //it will go on the current queue
-        addToDiskQ(&procTable[pid], unit, diskPosition[unit]);
+        }
+        else{
+            //it will go on the next queue
+            addToDiskQ(&procTable[pid], unit, diskPosition[unit+1]%2);
+        }
+        semvReal(semDiskQ[unit]);
+        //block on private mailbox
+        MboxReceive(procTable[pid].privateMbox, NULL, 0);
 
-    }
-    else{
-        //it will go on the next queue
-        addToDiskQ(&procTable[pid], unit, diskPosition[unit+1]%2);
-    }
-    semvReal(semDiskQ[unit]);
-    //block on private mailbox
-    MboxReceive(procTable[pid].privateMbox, NULL, 0);
     return 0;
 }
 
