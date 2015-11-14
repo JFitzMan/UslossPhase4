@@ -89,6 +89,7 @@ struct procSlot {
 	int 		timeToWakeUp;
 	USLOSS_DeviceRequest req;	
 	int 		startingTrack;
+	int         curTrack;
 	int 		totalSectors;
 
 

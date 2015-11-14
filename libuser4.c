@@ -109,7 +109,7 @@ int  DiskRead (void *diskBuffer, int unit, int track, int first,
                        int sectors, int *status){
 
 	//just checks for obvious illegal values for now, adjust as needed
-	if (unit < 0 || track < 0 || first < 0 || sectors < 0){
+	if (unit < 0 || unit > 1 || track < 0 || track > 16|| first < 0 || first > 16 || sectors < 0){
 		if (debugflaglib4)
 			USLOSS_Console("DiskRead(): illegal value(s) given, returning -1\n");
 		return -1;
@@ -134,7 +134,7 @@ int  DiskRead (void *diskBuffer, int unit, int track, int first,
 int  DiskWrite(void *diskBuffer, int unit, int track, int first,
                        int sectors, int *status){
 	//just checks for obvious illegal values for now, adjust as needed
-	if (unit < 0 || track < 0 || first < 0 || sectors < 0){
+	if (unit < 0 || unit > 1 || track < 0 || track > 16|| first < 0 || first > 16 || sectors < 0){
 		if (debugflaglib4)
 			USLOSS_Console("DiskRead(): illegal value(s) given, returning -1\n");
 		return -1;

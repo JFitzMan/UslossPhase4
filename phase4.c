@@ -259,6 +259,7 @@ DiskDriver(char *arg)
     request.reg1 = &size;
     USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
     int status = 0;
+    int sectorToWrite = 0;
     waitDevice(USLOSS_DISK_DEV, unit, &status);
     if (debugflag4)
         USLOSS_Console("    DiskDriver%d(): Starting. Disk size = %d \n", unit, size);
@@ -282,6 +283,8 @@ DiskDriver(char *arg)
 
     semvReal(semRunning);
 
+
+
     while(!isZapped() && diskArm[unit] != -1){
         //wait until there is a request generated
         sempReal(semDiskQ[unit]);
@@ -302,8 +305,8 @@ DiskDriver(char *arg)
 
             //DO REQUEST 
             ///adjust the arm to the startingTrack
-            if(diskArm[unit] != diskQ[unit][diskPosition[unit]]->startingTrack){
-                diskArm[unit] = diskQ[unit][diskPosition[unit]]->startingTrack;
+            if(diskArm[unit] != diskQ[unit][diskPosition[unit]]->curTrack){
+                diskArm[unit] = diskQ[unit][diskPosition[unit]]->curTrack;
                 USLOSS_DeviceRequest request;
                 request.opr = USLOSS_DISK_SEEK;
                 request.reg1 = diskArm[unit];
@@ -312,8 +315,13 @@ DiskDriver(char *arg)
                 waitDevice(USLOSS_DISK_DEV, unit, &status);
             }
 
+            if ( (int)diskQ[unit][diskPosition[unit]]->req.reg1 < sectorToWrite){
+                diskArm[unit] = diskArm[unit]+1%tracks[unit];
+                diskQ[unit][diskPosition[unit]]->curTrack = diskArm[unit];
+            }
+
             //do request
-            int sectorToWrite = (int)diskQ[unit][diskPosition[unit]]->req.reg1;
+            sectorToWrite = (int)diskQ[unit][diskPosition[unit]]->req.reg1;
 
             USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &diskQ[unit][diskPosition[unit]]->req);
             status = 0;
@@ -774,6 +782,7 @@ diskWriteReal(char *toTransfer, int sectorsToWrite, int startingTrack, int start
     char buf[512];
 
     int i;
+    procTable[me].curTrack = startingTrack;
     for (i = 0; i < sectorsToWrite; i++){
         //create the disk request for each sector 
 
@@ -784,19 +793,24 @@ diskWriteReal(char *toTransfer, int sectorsToWrite, int startingTrack, int start
         if (debugflag4)
         USLOSS_Console("diskWriteReal():  buf to write: %s\n", buf);
 
+        int sectorToWrite = (startingSector+i)%16;
+
         //create the disk request for each sector 
         USLOSS_DeviceRequest request;
         request.opr = USLOSS_DISK_WRITE;
-        request.reg1 = (void *) ( (long) startingSector+i);
+        request.reg1 = (void *) ( (long) sectorToWrite);
         request.reg2 = buf;
 
         procTable[me].req = request;
         procTable[me].startingTrack = startingTrack;
+
         procTable[me].privateMbox = MboxCreate(0,50);
         procTable[me].pid = me;
         procTable[me].totalSectors = sectorsToWrite;
 
         //will insert to the diskQ and return when the request is compelted
+        if(debugflag4)
+        USLOSS_Console("diskReadReal(): sending request to write to track %d sector %d: &s\n", procTable[me].curTrack, sectorToWrite);
         insertDiskRequest(me, unit, sectorsToWrite, startingSector);
     }
     return 0;
@@ -815,7 +829,7 @@ diskRead(systemArgs *args){
 
     int status = diskReadReal(toTransfer, sectorsToRead, startingTrack, startingSector, unit);
     if(status != 0){
-        USLOSS_Console("diskRead(): problem writing to disk\n");
+        USLOSS_Console("diskRead(): problem reading from disk\n");
     }
     args->arg1 = (void *) ( (long) status);
 
@@ -827,12 +841,15 @@ diskReadReal(char *toTransfer, int sectorsToRead, int startingTrack, int startin
 
     int i;
     char buf[512];
+    procTable[me].curTrack = startingTrack;
     for (i = 0; i < sectorsToRead; i++){
         //create the disk request for each sector 
 
+        int sectorToRead = (startingSector+i)%16;
+
         USLOSS_DeviceRequest request;
         request.opr = USLOSS_DISK_READ;
-        request.reg1 = (void *) ( (long) startingSector+i);
+        request.reg1 = (void *) ( (long) sectorToRead);
         request.reg2 = buf;
 
         procTable[me].req = request;
@@ -842,7 +859,12 @@ diskReadReal(char *toTransfer, int sectorsToRead, int startingTrack, int startin
         procTable[me].totalSectors = sectorsToRead;
 
         //will insert to the diskQ and return when the request is completed
+        if(debugflag4)
+        USLOSS_Console("diskReadReal(): sending request to read from track %d sector %d: &s\n", procTable[me].curTrack, sectorToRead);
+
         insertDiskRequest(me, unit, sectorsToRead, startingSector);
+        if(debugflag4)
+        USLOSS_Console("diskReadReal(): buff read from disk: &s\n", buf);
 
         strcpy(toTransfer+512*i, buf);
     }
@@ -853,7 +875,7 @@ diskReadReal(char *toTransfer, int sectorsToRead, int startingTrack, int startin
 
 int insertDiskRequest(int pid, int unit, int totalSectors, int startingSector){
         //select the proper Q to insert proc into
-        if(procTable[pid].startingTrack > diskArm[unit]){
+        if(procTable[pid].curTrack > diskArm[unit]){
             //it will go on the current queue
             addToDiskQ(&procTable[pid], unit, diskPosition[unit]);
 
