@@ -24,6 +24,7 @@ int writeMbox[USLOSS_TERM_UNITS];
 static procPtr diskQ [USLOSS_DISK_UNITS][2];
 static int tracks[USLOSS_DISK_UNITS];
 static int diskArm[USLOSS_DISK_UNITS];
+static int diskPosition[USLOSS_DISK_UNITS];
 int semDiskQ[USLOSS_DISK_UNITS];
 
 int lineAmount[USLOSS_TERM_UNITS] = {0,0,0,0};
@@ -226,7 +227,8 @@ start3(void)
     }
     //disk drivers
     for (i = 0; i < USLOSS_DISK_UNITS; i++) {
-        zap(diskDriverPID[i]);
+        diskArm[i] = -1;
+        semvReal(semDiskQ[i]);
         join(&status);
     }
 
@@ -234,7 +236,14 @@ start3(void)
     quit(0);
     
 }
-
+/*
+//disk info arrays and sems
+static procPtr diskQ [USLOSS_DISK_UNITS][2];
+static int tracks[USLOSS_DISK_UNITS];
+static int diskArm[USLOSS_DISK_UNITS];
+static int diskPosition[USLOSS_DISK_UNITS];
+int semDiskQ[USLOSS_DISK_UNITS];
+*/
 
 static int
 DiskDriver(char *arg)
@@ -252,11 +261,16 @@ DiskDriver(char *arg)
     if (debugflag4)
         USLOSS_Console("    DiskDriver%d(): DiskSize = %d \n", unit, size);
 
+    //initialize trackSize
     tracks[unit] = size;
 
+    //initialize diskArm
+    diskArm[unit] = 0;
+    diskPosition[unit] = QUEUE1;
+
     //initialize read and write queues
-    diskQ[unit][READ] = NULL;
-    diskQ[unit][WRITE] = NULL;
+    diskQ[unit][QUEUE1] = NULL;
+    diskQ[unit][QUEUE2] = NULL;
 
     //initialize semaphores
     semDiskQ[unit] = semcreateReal(0);
@@ -266,7 +280,16 @@ DiskDriver(char *arg)
 
     semvReal(semRunning);
 
-    while(!isZapped()){
+    while(!isZapped() && diskArm[unit] != -1){
+        //wait until there is a request generated
+        sempReal(semDiskQ[unit]);
+
+        if(diskQ[unit][diskPosition[unit]] == NULL){
+            if(diskPosition[unit] == QUEUE1)
+                diskPosition[unit] = QUEUE2;
+            else
+                diskPosition[unit] = QUEUE1;
+        }
 
     }
      

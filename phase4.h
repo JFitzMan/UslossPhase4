@@ -70,8 +70,8 @@ extern  int  diskReadReal();
 #define WAIT_BLOCKED 3
 #define SLEEPING     4
 
-#define READ 0
-#define WRITE  0
+#define QUEUE1  0
+#define QUEUE2  0
 
 
 
