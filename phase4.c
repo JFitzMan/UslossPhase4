@@ -34,7 +34,7 @@ char line [10][MAXLINE];
 //process table
 struct procSlot procTable[MAXPROC];
 
-int debugflag4 = 1;
+int debugflag4 = 0;
 
 static int ClockDriver(char *);
 static int DiskDriver(char *);
@@ -301,6 +301,20 @@ DiskDriver(char *arg)
                 USLOSS_Console("    DiskDriver%d(): theres a request on the queue\n", unit);
 
             //DO REQUEST 
+            ///adjust the arm to the startingTrack
+            diskArm[unit] = diskQ[unit][diskPosition[unit]]->startingTrack;
+            USLOSS_DeviceRequest request;
+            request.opr = USLOSS_DISK_SEEK;
+            request.reg1 = diskArm[unit];
+            USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
+            int status = 0;
+            waitDevice(USLOSS_DISK_DEV, unit, &status);
+
+            //do request
+            USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &diskQ[unit][diskPosition[unit]]->req);
+            status = 0;
+            waitDevice(USLOSS_DISK_DEV, unit, &status);
+
             int pidOfReq = diskQ[unit][diskPosition[unit]]->pid;
             //update queue
             if(diskQ[unit][diskPosition[unit]]->nextProc == NULL){
