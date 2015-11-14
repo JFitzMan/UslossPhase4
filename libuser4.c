@@ -144,7 +144,7 @@ int  DiskWrite(void *diskBuffer, int unit, int track, int first,
 	systemArgs sysArg;
 
 	CHECKMODE;
-	sysArg.number = SYS_DISKREAD;
+	sysArg.number = SYS_DISKWRITE;
 	sysArg.arg1 =  diskBuffer;
 	sysArg.arg2 = (void *) ( (long) sectors);
 	sysArg.arg3 = (void *) ( (long) track);
@@ -153,7 +153,7 @@ int  DiskWrite(void *diskBuffer, int unit, int track, int first,
 	USLOSS_Syscall(&sysArg);
 	*status = 0;
 	//once it wakes up, return arg1
-	return (int) sysArg.arg1;
+	return (int) sysArg.arg1; 
 }
 
 int  DiskSize (int unit, int *sector, int *track, int *disk){
@@ -168,9 +168,9 @@ int  DiskSize (int unit, int *sector, int *track, int *disk){
 	sysArg.number = SYS_DISKSIZE;
 	sysArg.arg1 = (void *) ( (long) unit);
 	USLOSS_Syscall(&sysArg);
-	*sector = sysArg.arg1;
-	*track = sysArg.arg2;
-	*disk = sysArg.arg3; 
+	*sector = (int)sysArg.arg1;
+	*track = (int)sysArg.arg2;
+	*disk = (int)sysArg.arg3; 
 
 	return 0;
 }

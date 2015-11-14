@@ -81,6 +81,8 @@ start3(void)
     systemCallVec[SYS_TERMREAD]  = termRead;
     systemCallVec[SYS_TERMWRITE] = termWrite;
     systemCallVec[SYS_DISKSIZE] = diskSize;
+    systemCallVec[SYS_DISKWRITE] = diskWrite;
+    systemCallVec[SYS_DISKREAD] = diskRead;
 
     //initialize global mailbox for proc table editing
     procTable_mutex = MboxCreate(1, 0);
@@ -283,6 +285,8 @@ DiskDriver(char *arg)
     while(!isZapped() && diskArm[unit] != -1){
         //wait until there is a request generated
         sempReal(semDiskQ[unit]);
+        if (debugflag4)
+            USLOSS_Console("    DiskDriver%d(): awoken to do a request\n", unit);
 
         //update the queue if need be
         if(diskQ[unit][diskPosition[unit]] == NULL){
@@ -291,9 +295,23 @@ DiskDriver(char *arg)
             else
                 diskPosition[unit] = QUEUE1;
         }
-        //just in case there are no pending requests
+        //just in case there are no pending requestsg
         if (diskQ[unit][diskPosition[unit]] != NULL){
-            
+            if (debugflag4)
+                USLOSS_Console("    DiskDriver%d(): theres a request on the queue\n", unit);
+
+            //DO REQUEST 
+            int pidOfReq = diskQ[unit][diskPosition[unit]]->pid;
+            //update queue
+            if(diskQ[unit][diskPosition[unit]]->nextProc == NULL){
+                diskQ[unit][diskPosition[unit]] = NULL;
+            }
+            else{
+                diskQ[unit][diskPosition[unit]] = diskQ[unit][diskPosition[unit]]->nextProc;
+            }
+            if (debugflag4)
+                USLOSS_Console("    DiskDriver%d(): waking up proc%d\n", unit, pidOfReq);
+            MboxSend(procTable[pidOfReq].privateMbox, NULL, 0);
         }
 
 
@@ -689,7 +707,7 @@ diskSize(systemArgs *args){
 
     int unit = (int)args->arg1;
     if (debugflag4)
-        USLOSS_Console("diskSize(): calling diskReadReal\n");
+        USLOSS_Console("diskSize(): calling diskSizeeal\n");
     int sectorSize = 0;
     int trackSize = 0;
     int diskSize = 0;
@@ -703,7 +721,7 @@ diskSize(systemArgs *args){
 void diskSizeReal(int unit, int *sectorSize, int *trackSize, int *diskSize){
     *sectorSize = USLOSS_DISK_SECTOR_SIZE;
     *trackSize = USLOSS_DISK_TRACK_SIZE;
-    *diskSize = tracksg[unit];
+    *diskSize = tracks[unit];
 
 }
 
@@ -731,7 +749,118 @@ diskWrite(systemArgs *args){
 int
 diskWriteReal(void *toTransfer, int sectorsToWrite, int startingTrack, int startingSector, int unit){
 
+    int me = getpid();
 
+    //create the disk request for each sector 
+    USLOSS_DeviceRequest request;
+    request.opr = USLOSS_DISK_WRITE;
+    request.reg1 = (void *) ( (long) startingSector);
+    request.reg2 = toTransfer;
+
+    procTable[me].req = request;
+    procTable[me].startingTrack = startingTrack;
+    procTable[me].privateMbox = MboxCreate(0,50);
+    procTable[me].pid = me;
+
+    //will insert to the diskQ and return when the request is compelted
+    return insertDiskRequest(me, unit);
+}
+
+void 
+diskRead(systemArgs *args){
+    if (debugflag4)
+        USLOSS_Console("diskRead(): extracting arguments\n");
+
+    void *toTransfer = args->arg1;
+    int sectorsToRead = (int)args->arg2;
+    int startingTrack = (int) args->arg3;
+    int startingSector = (int) args->arg4;
+    int unit = (int) args->arg5;
+
+    int status = diskReadReal(toTransfer, sectorsToRead, startingTrack, startingSector, unit);
+    if(status != 0){
+        USLOSS_Console("diskRead(): problem writing to disk\n");
+    }
+    args->arg1 = (void *) ( (long) status);
+
+}
+
+int
+diskReadReal(void *toTransfer, int sectorsToRead, int startingTrack, int startingSector, int unit){
+    int me = getpid();
+
+    //create the disk request for each sector 
+    USLOSS_DeviceRequest request;
+    request.opr = USLOSS_DISK_READ;
+    request.reg1 = (void *) ( (long) startingSector);
+    request.reg2 = toTransfer;
+
+    procTable[me].req = request;
+    procTable[me].startingTrack = startingTrack;
+    procTable[me].privateMbox = MboxCreate(0,50);
+    procTable[me].pid = me;
+
+    //will insert to the diskQ and return when the request is compelted
+    return insertDiskRequest(me, unit);
+}
+
+
+int insertDiskRequest(int pid, int unit){
+
+    //select the proper Q to insert proc into
+    if(procTable[pid].startingTrack > diskArm[unit]){
+        //it will go on the current queue
+        addToDiskQ(&procTable[pid], unit, diskPosition[unit]);
+
+    }
+    else{
+        //it will go on the next queue
+        addToDiskQ(&procTable[pid], unit, diskPosition[unit+1]%2);
+    }
+    semvReal(semDiskQ[unit]);
+    //block on private mailbox
+    MboxReceive(procTable[pid].privateMbox, NULL, 0);
+    return 0;
+}
+
+void addToDiskQ(procPtr toAdd, int unit, int q){
+
+    //list is empty, toAdd is the front
+    if(diskQ[unit][q] == NULL){
+        diskQ[unit][q] = toAdd;
+    }
+    //toAdd has the shortest nap on the list
+    else if (toAdd->startingTrack < diskQ[unit][q]->startingTrack){
+        toAdd->nextProc = diskQ[unit][q];
+        diskQ[unit][q] = toAdd;
+    }
+    //scann until toAdd fits in
+    else{
+        procPtr prev = NULL;
+        procPtr cur;
+        int added = 0;
+        for (cur = diskQ[unit][q]; cur != NULL; cur = cur->nextProc){
+            if (cur->startingTrack > toAdd->startingTrack){
+                prev->nextProc =toAdd;
+                toAdd->nextProc = cur;
+                added = 1;
+                break;
+            }
+            prev = cur;
+        }//end for
+
+        //check to see if it was  added. If not, it goes at the end
+        if(!added){
+            cur = diskQ[unit][q];
+            while (cur->nextProc != NULL){
+                cur = cur->nextProc;
+            }
+            cur->nextProc = toAdd;
+        }
+    }
+
+    if (debugflag4)
+        USLOSS_Console("addToDiskQ(): Process %d added to diskQ, startingTrack: %d\n",toAdd->pid, toAdd->startingTrack);
 }
 
 

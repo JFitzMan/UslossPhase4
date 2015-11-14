@@ -60,6 +60,9 @@ extern  int  diskWriteReal(void *toTransfer, int sectorsToWrite, int startingTra
 extern  void diskRead(systemArgs *args);
 extern  int  diskReadReal();
 
+extern  int insertDiskRequest(int pid, int unit);
+extern  void addToDiskQ(procPtr toAdd, int unit, int position);
+
 
 #define ERR_INVALID             -1
 #define ERR_OK                  0
@@ -83,8 +86,10 @@ struct procSlot {
 	procPtr		nextProc;
 	int			privateMbox;
 	int			termCode;
-	int 		timeToWakeUp
+	int 		timeToWakeUp;
 	USLOSS_DeviceRequest req;	
+	int 		startingTrack;
+
 
 
 };
