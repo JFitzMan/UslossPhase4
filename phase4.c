@@ -268,12 +268,13 @@ DiskDriver(char *arg)
     tracks[unit] = size;
 
     //initialize diskArm
-    diskArm[unit] = 0;
     diskPosition[unit] = QUEUE1;
 
     //initialize read and write queues
     diskQ[unit][QUEUE1] = NULL;
     diskQ[unit][QUEUE2] = NULL;
+
+    diskArm[unit] = -2;
 
     //initialize semaphores
     semDiskQ[unit] = semcreateReal(0);
@@ -293,17 +294,13 @@ DiskDriver(char *arg)
 
         //update the queue if need be
         if(diskQ[unit][diskPosition[unit]] == NULL){
-            if(diskPosition[unit] == QUEUE1)
-                diskPosition[unit] = QUEUE2;
-            else
-                diskPosition[unit] = QUEUE1;
+            diskPosition[unit] = (diskPosition[unit]+1)%2;
         }
         //just in case there are no pending requestsg
         if (diskQ[unit][diskPosition[unit]] != NULL){
             if (debugflag4)
                 USLOSS_Console("    DiskDriver%d(): theres a request on the queue\n", unit);
 
-            //DO REQUEST 
             ///adjust the arm to the startingTrack
             if(diskArm[unit] != diskQ[unit][diskPosition[unit]]->curTrack){
                 diskArm[unit] = diskQ[unit][diskPosition[unit]]->curTrack;
@@ -319,6 +316,8 @@ DiskDriver(char *arg)
                 diskArm[unit] = diskArm[unit]+1%tracks[unit];
                 diskQ[unit][diskPosition[unit]]->curTrack = diskArm[unit];
             }
+            if (debugflag4)
+            USLOSS_Console("    DiskDriver%d(): arm on track %d\n", unit, diskArm[unit]);
 
             //do request
             sectorToWrite = (int)diskQ[unit][diskPosition[unit]]->req.reg1;
@@ -875,6 +874,10 @@ diskReadReal(char *toTransfer, int sectorsToRead, int startingTrack, int startin
 
 int insertDiskRequest(int pid, int unit, int totalSectors, int startingSector){
         //select the proper Q to insert proc into
+
+        if (diskArm[unit] == -2){
+            diskArm[unit] = procTable[pid].curTrack-1;
+        }
         if(procTable[pid].curTrack > diskArm[unit]){
             //it will go on the current queue
             addToDiskQ(&procTable[pid], unit, diskPosition[unit]);
@@ -882,7 +885,7 @@ int insertDiskRequest(int pid, int unit, int totalSectors, int startingSector){
         }
         else{
             //it will go on the next queue
-            addToDiskQ(&procTable[pid], unit, diskPosition[unit+1]%2);
+            addToDiskQ(&procTable[pid], unit, (diskPosition[unit]+1)%2);
         }
         semvReal(semDiskQ[unit]);
         //block on private mailbox
@@ -892,6 +895,8 @@ int insertDiskRequest(int pid, int unit, int totalSectors, int startingSector){
 }
 
 void addToDiskQ(procPtr toAdd, int unit, int q){
+
+
 
     //list is empty, toAdd is the front
     if(diskQ[unit][q] == NULL){
@@ -928,7 +933,7 @@ void addToDiskQ(procPtr toAdd, int unit, int q){
     }
 
     if (debugflag4)
-        USLOSS_Console("addToDiskQ(): Process %d added to diskQ, startingTrack: %d\n",toAdd->pid, toAdd->startingTrack);
+        USLOSS_Console("addToDiskQ(): Process %d added to diskQ, startingTrack: %d queue# %d\n",toAdd->pid, toAdd->startingTrack, q);
 }
 
 

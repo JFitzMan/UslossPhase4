@@ -74,7 +74,7 @@ extern  void addToDiskQ(procPtr toAdd, int unit, int position);
 #define SLEEPING     4
 
 #define QUEUE1  0
-#define QUEUE2  0
+#define QUEUE2  1
 
 
 
